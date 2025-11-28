@@ -1,28 +1,489 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8" />
+
+    <!-- SEO -->
+    <title>Murder at the Roundhouse – 1930s Art Deco Murder Mystery Game</title>
+    <meta name="description" content="Play Murder at the Roundhouse — a free 1930s Art Deco detective game with Match-3, Block-clearing puzzle, Wordsearch, Sudoku and more. Investigate clues solo or bring up to 12 friends.">
+    <meta name="keywords"
+        content="murder mystery game, 1930s, art deco, puzzle game, whodunnit, free browser game, detective game, escape room, multiplayer, casual">
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Murder at the Roundhouse</title>
+
+    <!-- JSON-LD -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "VideoGame",
+      "name": "Murder at the Roundhouse",
+      "description": "A 1930s Art Deco murder mystery game with puzzles, suspects, single-player mode and multiplayer up to 12 players.",
+      "genre": "Mystery Puzzle",
+      "author": {
+        "@type": "Person",
+        "name": "StylesLab"
+      },
+      "operatingSystem": "Web",
+      "image": "https://styleslab.github.io/murder-at-the-roundhouse/images/matr.jpg",
+      "url": "https://styleslab.github.io/murder-at-the-roundhouse"
+    }
+    </script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Special+Elite&display=swap"
+        rel="stylesheet">
+
     <style>
-        body, html {
+        * {
             margin: 0;
             padding: 0;
-            height: 100%;
-            background: #000;
+            box-sizing: border-box;
         }
-        iframe {
+
+        body {
+            font-family: "Special Elite", monospace;
+            background: linear-gradient(135deg, #1c1a18, #2d2926);
+            color: #f3e9d7;
+            min-height: 100vh;
+            padding: 2rem;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        .page-wrap {
+            display: flex;
+            max-width: 1200px;
             width: 100%;
-            height: 100%;
-            border: none;
+            gap: 2rem;
+        }
+
+        /* LEFT CONTENT BLOCK */
+        .container {
+            flex: 1;
+            text-align: center;
+            border: 3px double #d4b483;
+            padding: 2rem;
+            background: rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(4px);
+            border-radius: 12px;
+            position: relative;
+        }
+
+        .title {
+            font-family: "Cinzel", serif;
+            font-size: 2.7rem;
+            letter-spacing: 2px;
+            margin-bottom: 1rem;
+            color: #e8d5b5;
+            text-shadow: 0 0 12px rgba(255, 215, 160, 0.3);
+        }
+
+        .subtitle {
+            font-size: 1.15rem;
+            margin-bottom: 1.6rem;
+            opacity: 0.9;
+        }
+
+        .deco-divider {
+            width: 160px;
+            height: 2px;
+            background: linear-gradient(to right, transparent, #d4b483, transparent);
+            margin: 1.4rem auto;
+        }
+
+        .description {
+            font-size: 1.05rem;
+            line-height: 1.7;
+            max-width: 700px;
+            margin: 0 auto 2rem;
+            opacity: 0.95;
+        }
+
+        .play-btn {
+            display: inline-block;
+            padding: 1rem 2.2rem;
+            font-size: 1.4rem;
+            font-weight: bold;
+            background: #d4b483;
+            color: #1c1a18;
+            border: 3px solid #f6e7c1;
+            border-radius: 6px;
+            text-decoration: none;
+            letter-spacing: 1px;
+            box-shadow: 0 0 14px rgba(212, 180, 131, 0.6);
+            transition: 0.15s ease-out;
+        }
+
+        .play-btn:hover {
+            background: #f6e7c1;
+            transform: scale(1.05);
+        }
+
+        /* ART DECO CORNERS */
+        .corner {
+            position: absolute;
+            width: 35px;
+            height: 35px;
+            border: 2px solid #d4b483;
+        }
+
+        .top-left {
+            top: 8px;
+            left: 8px;
+            border-right: none;
+            border-bottom: none;
+        }
+
+        .top-right {
+            top: 8px;
+            right: 8px;
+            border-left: none;
+            border-bottom: none;
+        }
+
+        .bottom-left {
+            bottom: 8px;
+            left: 8px;
+            border-right: none;
+            border-top: none;
+        }
+
+        .bottom-right {
+            bottom: 8px;
+            right: 8px;
+            border-left: none;
+            border-top: none;
+        }
+
+        /****************************************
+         * 1930s ART DECO SCROLLBARS
+         ****************************************/
+
+        .screenshots::-webkit-scrollbar {
+            width: 14px;
+            height: 14px;
+            background: #1e1b18;
+        }
+
+        .screenshots::-webkit-scrollbar-track {
+            background: #1e1b18;
+            border-left: 2px solid #d4b483;
+            border-right: 2px solid #d4b483;
+            background-image: linear-gradient(180deg, rgba(212, 180, 131, 0.15), transparent);
+        }
+
+        .screenshots::-webkit-scrollbar-thumb {
+            background: #d4b483;
+            border: 3px solid #1e1b18;
+            border-radius: 0;
+            box-shadow: inset 0 0 8px rgba(255, 225, 180, 0.5);
+        }
+
+        .screenshots::-webkit-scrollbar-thumb:hover {
+            background: #f6e7c1;
+            box-shadow: inset 0 0 10px rgba(255, 240, 200, 0.8);
+        }
+
+        .screenshots::-webkit-scrollbar:horizontal {
+            height: 14px;
+        }
+
+        .screenshots::-webkit-scrollbar-thumb:horizontal {
+            border-top: 3px solid #1e1b18;
+            border-bottom: 3px solid #1e1b18;
+        }
+
+        .screenshots {
+            scrollbar-width: thin;
+            scrollbar-color: #d4b483 #1e1b18;
+        }
+
+        /****************************************
+         * SCREENSHOT COLUMN / HORIZONTAL SCROLLER
+         ****************************************/
+
+        .screenshots {
+            width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+        }
+
+        .screenshots img {
+            width: 100%;
+            border: 2px solid #d4b483;
+            border-radius: 8px;
+            box-shadow: 0 0 12px rgba(0, 0, 0, 0.4);
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .screenshots img:hover {
+            transform: scale(1.02);
+            box-shadow: 0 0 16px rgba(212, 180, 131, 0.7);
+        }
+
+        @media (max-width: 900px) {
+            .page-wrap {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .screenshots {
+                width: 100%;
+                flex-direction: row;
+                overflow-x: auto;
+                white-space: nowrap;
+                padding: 1rem 0;
+            }
+
+            .screenshots img {
+                width: 280px;
+                margin-right: 1rem;
+                display: inline-block;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .title {
+                font-size: 2.2rem;
+            }
+
+            .subtitle {
+                font-size: 1rem;
+            }
+
+            .description {
+                font-size: 0.95rem;
+            }
+        }
+
+        /****************************************
+         * FULLSCREEN LIGHTBOX
+         ****************************************/
+
+        .lightbox {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.92);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            padding: 1rem;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .lightbox img {
+            max-width: 90%;
+            max-height: 90%;
+            border: 4px solid #d4b483;
+            border-radius: 8px;
+            box-shadow: 0 0 22px rgba(212, 180, 131, 0.6);
+        }
+
+        .close-btn {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            font-size: 3rem;
+            color: #d4b483;
+            cursor: pointer;
+            text-shadow: 0 0 10px rgba(212, 180, 131, 0.6);
+            transition: 0.2s;
+        }
+
+        .close-btn:hover {
+            color: #f6e7c1;
+        }
+
+        .nav-arrow {
+            position: absolute;
+            top: 50%;
+            font-size: 3rem;
+            transform: translateY(-50%);
+            color: #d4b483;
+            cursor: pointer;
+            padding: 0 1rem;
+            text-shadow: 0 0 10px rgba(212, 180, 131, 0.6);
+            transition: 0.2s;
+            user-select: none;
+        }
+
+        .nav-arrow:hover {
+            color: #f6e7c1;
+        }
+
+        .left-arrow {
+            left: 20px;
+        }
+
+        .right-arrow {
+            right: 20px;
+        }
+
+        /* Responsive Banner */
+        .banner-wrap {
+            max-width: 400px;
+            margin: 0 auto 1.5rem;
+        }
+
+        .banner-wrap img {
+            width: 100%;
+            height: auto;
+            display: block;
+            /* border: 3px double #d4b483;
+    border-radius: 8px;
+    box-shadow: 0 0 14px rgba(212,180,131,0.4); */
+        }
+
+        .visually-hidden {
+            position: absolute !important;
+            left: -9999px !important;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+        }
+
+
+        @media (max-width: 600px) {
+            .nav-arrow {
+                font-size: 2.4rem;
+            }
+
+            .close-btn {
+                font-size: 2.4rem;
+            }
         }
     </style>
 </head>
+
+
 <body>
-    <iframe 
-        src="https://matr.azurewebsites.net/play"
-        allowfullscreen
-        loading="lazy">
-    </iframe>
+    <div class="page-wrap">
+
+        <!-- LEFT CONTENT -->
+        <div class="container">
+            <div class="corner top-left"></div>
+            <div class="corner top-right"></div>
+            <div class="corner bottom-left"></div>
+            <div class="corner bottom-right"></div>
+
+            <div class="banner-wrap">
+                <img src="images/banner.png" alt="Murder at the Roundhouse – 1930s Banner">
+            </div>
+
+            <h1 class="visually-hidden">Murder at the Roundhouse – 1930s Art Deco Murder Mystery Game</h1>
+
+
+            <p class="subtitle">A Free 1930s Art Deco Murder Mystery Game</p>
+
+            <div class="deco-divider"></div>
+
+            <p class="description">
+                Step into the glittering 1930s Roundhouse, where secrets hide beneath gold and shadow.
+                Play <strong>solo</strong>, or gather up to <strong>12 friends</strong> for a full multiplayer
+                whodunnit.
+                <br><br>
+                Interrogate suspects, uncover clues, and complete mini-games including Match-3, Block Blast,
+                Wordsearch, Memory Match and more.
+                <br><br>
+                Will you expose the killer before time runs out?
+            </p>
+
+            <a class="play-btn" href="https://matr.azurewebsites.net/">Play Now</a>
+        </div>
+
+        <!-- RIGHT-SIDE SCREENSHOTS -->
+        <div class="screenshots" id="gallery">
+            <img src="images/screenshot0.jpg" alt="Screenshot 0">
+            <img src="images/screenshot2.jpg" alt="Screenshot 2">
+            <img src="images/screenshot1.jpg" alt="Screenshot 1">
+            <img src="images/screenshot3.jpg" alt="Screenshot 3">
+            <img src="images/screenshot4.jpg" alt="Screenshot 4">
+            <img src="images/screenshot5.jpg" alt="Screenshot 5">
+        </div>
+
+        <!-- FULLSCREEN LIGHTBOX -->
+        <div id="lightbox" class="lightbox hidden">
+            <span class="close-btn">&times;</span>
+            <span class="nav-arrow left-arrow">&#10094;</span>
+            <img id="lightbox-img" src="">
+            <span class="nav-arrow right-arrow">&#10095;</span>
+        </div>
+
+    </div>
+
+    <!-- JAVASCRIPT FOR LIGHTBOX -->
+    <script>
+        const gallery = document.getElementById("gallery");
+        const lightbox = document.getElementById("lightbox");
+        const lightboxImg = document.getElementById("lightbox-img");
+        const closeBtn = document.querySelector(".close-btn");
+        const leftArrow = document.querySelector(".left-arrow");
+        const rightArrow = document.querySelector(".right-arrow");
+
+        let images = Array.from(gallery.querySelectorAll("img"));
+        let index = 0;
+
+        // Open lightbox
+        images.forEach((img, i) => {
+            img.addEventListener("click", () => {
+                index = i;
+                showImage();
+                lightbox.classList.remove("hidden");
+            });
+        });
+
+        function showImage() {
+            lightboxImg.src = images[index].src;
+        }
+
+        // Close lightbox
+        closeBtn.addEventListener("click", () => {
+            lightbox.classList.add("hidden");
+        });
+
+        // Close by clicking background
+        lightbox.addEventListener("click", (e) => {
+            if (e.target === lightbox) {
+                lightbox.classList.add("hidden");
+            }
+        });
+
+        // Arrows
+        leftArrow.addEventListener("click", () => {
+            index = (index - 1 + images.length) % images.length;
+            showImage();
+        });
+
+        rightArrow.addEventListener("click", () => {
+            index = (index + 1) % images.length;
+            showImage();
+        });
+
+        // Keyboard controls
+        document.addEventListener("keydown", (e) => {
+            if (lightbox.classList.contains("hidden")) return;
+
+            if (e.key === "Escape") lightbox.classList.add("hidden");
+            if (e.key === "ArrowLeft") {
+                index = (index - 1 + images.length) % images.length;
+                showImage();
+            }
+            if (e.key === "ArrowRight") {
+                index = (index + 1) % images.length;
+                showImage();
+            }
+        });
+    </script>
+
 </body>
+
 </html>
