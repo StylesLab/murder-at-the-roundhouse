@@ -42,6 +42,8 @@ const playerById = id => state.players.find(player => player.id === id);
 const poisonerHasQualified = () => state.courses.some(course =>
   course.results.some(result => !result.protected && playerById(result.playerId).role !== "Poisoner")
 );
+const currentCourse = () => state.current?.name ?? "course";
+const currentCourseLower = () => currentCourse().toLowerCase();
 const safeImage = (image, name, className = "") => {
   const img = document.createElement("img");
   img.src = image; img.alt = `Portrait of ${name}`; img.className = className;
@@ -138,9 +140,9 @@ function showPassScreen(player, purpose, callback) {
 function revealRole() {
   const player = state.players[state.roleRevealIndex];
   const descriptions = {
-    Poisoner: "Each course, secretly poison one guest's meal—or choose no poison. Swaps may move that meal before it is eaten.",
+    Poisoner: "Each course, secretly poison one guest's serving—or choose no poison. Swaps may move it before it is eaten.",
     Doctor: "Each course, secretly protect one guest, including yourself. Your choice can prevent that guest from losing health.",
-    Guest: "Observe, discuss, and identify the Poisoner. Each course you have a 50% chance of receiving a secret opportunity to swap meals."
+    Guest: "Observe, discuss, and identify the Poisoner. Each course you have a 50% chance of receiving a secret opportunity to swap servings."
   };
   const root = document.createDocumentFragment();
   root.append(titleBlock(player.name, `You are the ${player.role}`, descriptions[player.role]),
@@ -170,7 +172,7 @@ function beginCourse() {
   };
   const root = document.createDocumentFragment();
   root.append(titleBlock(`Course ${state.courseIndex + 1} of ${COURSE_NAMES.length}`, state.current.name,
-    "The Poisoner targets a meal and the Doctor protects a guest. Then each player may secretly receive a chance to swap meals. Swaps are applied immediately in pass order."));
+    `The Poisoner targets a serving of ${currentCourseLower()} and the Doctor protects a guest. Then each player may secretly receive a chance to swap ${currentCourseLower()}. Swaps are applied immediately in pass order.`));
   const courseImage = safeImage(COURSE_IMAGES[state.current.name], `${state.current.name} course`, "course-image");
   courseImage.alt = `${state.current.name} course illustration`;
   root.append(courseImage, actions(button("Begin secret actions", beginPrivateActionRound)));
@@ -198,17 +200,17 @@ function finishPrivateAction() {
 }
 function renderPoisonerAction(player) {
   const root = document.createDocumentFragment();
-  root.append(titleBlock(player.name, "Choose a meal to poison", "Target the meal currently placed in front of one guest. Later swaps may move it. You may also choose no poison."));
+  root.append(titleBlock(player.name, `Choose ${currentCourseLower()} to poison`, `Target the ${currentCourseLower()} currently placed in front of one guest. Later swaps may move it. You may also choose no poison.`));
   if (!poisonerHasQualified()) root.append(el("p", "status warning",
     "Victory requirement not yet met: you must cause at least one non-Poisoner to lose unprotected health before dinner ends."));
   const grid = el("div", "choices people");
   state.players.forEach(person => {
     const choice = button("", () => selectPoisonTarget(grid, person.id), "person-choice");
     choice.dataset.id = person.id; choice.setAttribute("aria-pressed", "false");
-    choice.append(safeImage(person.image, person.name), el("span", "", `Poison ${person.name}'s meal`));
+    choice.append(safeImage(person.image, person.name), el("span", "", `Poison ${person.name}'s ${currentCourseLower()}`));
     grid.append(choice);
   });
-  const decline = button("Use no poison this course", () => selectPoisonTarget(grid, null), "choice");
+  const decline = button(`Use no poison in the ${currentCourseLower()}`, () => selectPoisonTarget(grid, null), "choice");
   decline.dataset.id = "none"; decline.setAttribute("aria-pressed", "false"); grid.append(decline);
   root.append(grid, actions(button("Seal my choice", () => {
     if (state.pending.poison === undefined) { showMessage("Choose a poison decision."); return; }
@@ -227,7 +229,7 @@ function selectPoisonTarget(grid, targetId) {
 }
 function renderDoctorAction(player) {
   const root = document.createDocumentFragment();
-  root.append(titleBlock(player.name, "Choose someone to protect", "You may protect yourself. Protection applies to whoever finally eats that guest's meal."));
+  root.append(titleBlock(player.name, "Choose someone to protect", `You may protect yourself. Protection applies to whoever finally eats that guest's ${currentCourseLower()}.`));
   root.append(personChoices("protection"), actions(button("Seal my choice", () => {
     if (!state.pending.protection) { showMessage("Choose a person to protect."); return; }
     state.current.protectionTarget = state.pending.protection;
@@ -238,7 +240,7 @@ function renderDoctorAction(player) {
 function renderGuestAction(player) {
   const root = document.createDocumentFragment();
   root.append(titleBlock(player.name, "Nothing unusual to report",
-    "You have no role action this course. A separate secret swap opportunity may follow."));
+    `You have no role action during the ${currentCourseLower()}. A separate secret swap opportunity may follow.`));
   root.append(actions(button("Seal my report", finishPrivateAction)));
   setScreen(root);
 }
@@ -270,30 +272,30 @@ function beginSwapTurn() {
   if (state.current.swapEligibility[player.id] === undefined) {
     state.current.swapEligibility[player.id] = Math.random() < SWAP_CHANCE;
   }
-  showPassScreen(player, `${state.current.name}: meal service`, () => renderSwapAction(player));
+  showPassScreen(player, `${state.current.name}: service`, () => renderSwapAction(player));
 }
 function renderSwapAction(player) {
   if (!state.current.swapEligibility[player.id]) {
     const root = document.createDocumentFragment();
-    root.append(titleBlock(player.name, "Your meal remains in place",
-      "You did not receive a swap opportunity this course. You may still claim otherwise during discussion."),
+    root.append(titleBlock(player.name, `Your ${currentCourseLower()} remains in place`,
+      `You did not receive a chance to swap ${currentCourseLower()}. You may still claim otherwise during discussion.`),
       actions(button("Hide this report", () => finishSwapTurn(player, null, false))));
     setScreen(root);
     return;
   }
   const root = document.createDocumentFragment();
-  root.append(titleBlock(player.name, "You may secretly swap meals",
-    "Choose another guest to exchange meals with now, or decline. The exchange is applied immediately before the next player's turn."));
+  root.append(titleBlock(player.name, `You may secretly swap ${currentCourseLower()}`,
+    `Choose another guest to exchange ${currentCourseLower()} with now, or decline. The exchange is applied immediately before the next player's turn.`));
   const grid = el("div", "choices people");
   state.players.filter(person => person.id !== player.id).forEach(person => {
     const choice = button("", () => selectSwapOption(grid, person.id), "person-choice");
     choice.dataset.id = person.id; choice.setAttribute("aria-pressed", "false");
-    choice.append(safeImage(person.image, person.name), el("span", "", `Swap with ${person.name}`)); grid.append(choice);
+    choice.append(safeImage(person.image, person.name), el("span", "", `Swap ${currentCourseLower()} with ${person.name}`)); grid.append(choice);
   });
-  const decline = button("Keep my current meal", () => selectSwapOption(grid, null), "choice");
+  const decline = button(`Keep my ${currentCourseLower()}`, () => selectSwapOption(grid, null), "choice");
   decline.dataset.id = "none"; decline.setAttribute("aria-pressed", "false"); grid.append(decline);
   root.append(grid, actions(button("Seal my choice", () => {
-    if (state.pending.swap === undefined) { showMessage("Choose a swap target, or keep your meal."); return; }
+    if (state.pending.swap === undefined) { showMessage(`Choose a swap target, or keep your ${currentCourseLower()}.`); return; }
     finishSwapTurn(player, state.pending.swap, true);
   })));
   setScreen(root);
@@ -352,13 +354,13 @@ function renderPrivateReport(player) {
   const ownDecision = state.current.swapDecisions.find(decision => decision.playerId === player.id);
   const switchMessage = ownDecision && ownDecision.offered
     ? ownDecision.targetId === null
-      ? " You were offered a swap but kept your meal."
-      : ` Your swap with ${playerById(ownDecision.targetId).name} was carried out immediately.`
+      ? ` You were offered a swap but kept your ${currentCourseLower()}.`
+      : ` Your ${currentCourseLower()} swap with ${playerById(ownDecision.targetId).name} was carried out immediately.`
     : " You were not offered a swap.";
   if (player.role !== "Doctor") {
     const root = document.createDocumentFragment();
     root.append(titleBlock(player.name, "Your private report",
-      `You have ${player.health} health remaining.${switchMessage} Keep your role and meal history secret unless you choose to make a claim.`),
+      `You have ${player.health} health remaining.${switchMessage} Keep your role and ${currentCourseLower()} history secret unless you choose to make a claim.`),
       actions(button("Hide this report", finishPrivateReport)));
     setScreen(root);
     return;
@@ -368,14 +370,14 @@ function renderPrivateReport(player) {
   const root = document.createDocumentFragment();
   root.append(titleBlock(player.name, protectedIncident ? "Your intervention succeeded" : "No antidote was needed",
     protectedIncident
-      ? `You prevented ${protectedPlayer.name} from losing health this course.${switchMessage} Keep that knowledge secret.`
-      : `${protectedPlayer.name} did not eat the poisoned meal—or no poison was used.${switchMessage} Keep that knowledge secret.`),
+      ? `You prevented ${protectedPlayer.name} from losing health during the ${currentCourseLower()}.${switchMessage} Keep that knowledge secret.`
+      : `${protectedPlayer.name} did not eat the poisoned ${currentCourseLower()}—or no poison was used.${switchMessage} Keep that knowledge secret.`),
     actions(button("Hide this report", finishPrivateReport)));
   setScreen(root);
 }
 function finishPrivateReport() { state.actionIndex += 1; beginPrivateReportTurn(); }
 function publicResult(course) {
-  if (course.results.length === 0) return "Nobody became ill during this course.";
+  if (course.results.length === 0) return `Nobody became ill during the ${course.name.toLowerCase()}.`;
   const result = course.results[0];
   const player = playerById(result.playerId);
   return result.protected
@@ -383,11 +385,12 @@ function publicResult(course) {
     : `${player.name} was taken seriously ill and now has ${result.healthAfter} health remaining.`;
 }
 function evidenceFor(course) {
-  if (course.poisonedMealOwnerId === null) return "No physical trace of poison was found.";
-  if (course.results.length === 0) return "A bitter residue was discovered on an uneaten portion of the course.";
-  if (course.swapHistory.length > 1) return "Several place settings appeared to have been disturbed during service.";
-  if (course.swapHistory.length === 1) return "One place setting appeared to have been disturbed.";
-  return "A faint almond scent lingered over one plate.";
+  const courseName = course.name.toLowerCase();
+  if (course.poisonedMealOwnerId === null) return `No physical trace of poison was found in the ${courseName}.`;
+  if (course.results.length === 0) return `A bitter residue was discovered on an uneaten portion of ${courseName}.`;
+  if (course.swapHistory.length > 1) return `Several servings of ${courseName} appeared to have been disturbed during service.`;
+  if (course.swapHistory.length === 1) return `One serving of ${courseName} appeared to have been disturbed.`;
+  return `A faint almond scent lingered over one serving of ${courseName}.`;
 }
 function renderResolution() {
   state.phase = "resolution";
@@ -419,7 +422,7 @@ function renderDiscussion() {
   const portraits = el("div", "mini-portraits");
   state.players.forEach(p => portraits.append(safeImage(p.image, p.name)));
   const prompts = el("ul", "prompts");
-  ["Were you offered a chance to swap?", "Did you exchange meals, and with whom?", "Whose meal do you believe you finally ate?", "Why might the Doctor have protected that person?"].forEach(p => prompts.append(el("li", "", p)));
+  ["Were you offered a chance to swap?", `Did you exchange ${currentCourseLower()}, and with whom?`, `Whose ${currentCourseLower()} do you believe you finally ate?`, "Why might the Doctor have protected that person?"].forEach(p => prompts.append(el("li", "", p)));
   root.append(portraits, el("div", "result", publicResult(state.current)), actions(
     button(state.courseIndex === COURSE_NAMES.length - 1 ? "Begin accusations" : "Start the next course", () => {
       state.courseIndex += 1; beginCourse();
@@ -455,8 +458,9 @@ function calculateScore() {
   return { incidents, unprotected, misdirected, bluffs, total: incidents * 2 + unprotected * 3 + misdirected * 2 + bluffs };
 }
 function ownerAtSeat(course, playerId) { return playerById(course.mealOwners[playerId]); }
-function renderMealMap(map) {
-  return state.players.map(seat => `${seat.name} had ${playerById(map[seat.id]).name}'s meal`).join("; ");
+function renderMealMap(course, map) {
+  const courseName = course.name.toLowerCase();
+  return state.players.map(seat => `${seat.name} had ${playerById(map[seat.id]).name}'s ${courseName}`).join("; ");
 }
 function renderFinalReveal() {
   state.phase = "final";
@@ -487,29 +491,30 @@ function renderFinalReveal() {
   const timeline = el("section", "timeline");
   state.courses.forEach((course, index) => {
     const article = document.createElement("article");
+    const courseName = course.name.toLowerCase();
     const poisonText = course.poisonedMealOwnerId === null
-      ? "No meal was poisoned."
-      : `${playerById(course.poisonedMealOwnerId).name}'s original meal was poisoned.`;
+      ? `No ${courseName} was poisoned.`
+      : `${playerById(course.poisonedMealOwnerId).name}'s ${courseName} was poisoned.`;
     article.append(el("h3", "", `${index + 1}. ${course.name}`),
       el("p", "", `${poisonText} Doctor protected ${playerById(course.protectionTarget).name}.`),
-      el("p", "", `Starting places: ${renderMealMap(course.originalMealOwners)}.`));
+      el("p", "", `Starting places: ${renderMealMap(course, course.originalMealOwners)}.`));
     const decisions = el("ol", "");
     course.swapDecisions.forEach(decision => {
       const actor = playerById(decision.playerId);
       let text;
       if (!decision.offered) text = `${actor.name} was not offered a swap.`;
-      else if (decision.targetId === null) text = `${actor.name} was offered a swap but kept their current meal.`;
-      else text = `${actor.name} swapped immediately with ${playerById(decision.targetId).name}. Afterward: ${renderMealMap(decision.after)}.`;
+      else if (decision.targetId === null) text = `${actor.name} was offered a swap but kept their ${courseName}.`;
+      else text = `${actor.name} swapped ${courseName} immediately with ${playerById(decision.targetId).name}. Afterward: ${renderMealMap(course, decision.after)}.`;
       decisions.append(el("li", "", text));
     });
     article.append(el("h4", "", "Swap sequence"), decisions,
-      el("p", "", `Final places: ${renderMealMap(course.mealOwners)}.`));
+      el("p", "", `Final places: ${renderMealMap(course, course.mealOwners)}.`));
     const list = el("ul", "");
     state.players.forEach(p => {
       const incident = course.results.find(r => r.playerId === p.id);
-      const outcome = incident ? (incident.protected ? "ate the poisoned meal, but was protected" : "ate the poisoned meal and was unprotected") : "did not eat the poisoned meal";
+      const outcome = incident ? (incident.protected ? `ate the poisoned ${courseName}, but was protected` : `ate the poisoned ${courseName} and was unprotected`) : `did not eat the poisoned ${courseName}`;
       const mealOwner = ownerAtSeat(course, p.id);
-      list.append(el("li", "", `${p.name} ate ${mealOwner.name}'s original meal; ${outcome}; ${course.healthAfter[p.id]} health remaining.`));
+      list.append(el("li", "", `${p.name} ate ${mealOwner.name}'s ${courseName}; ${outcome}; ${course.healthAfter[p.id]} health remaining.`));
     });
     article.append(list, el("p", "", `Public report: ${publicResult(course)} ${evidenceFor(course)}`)); timeline.append(article);
   });
