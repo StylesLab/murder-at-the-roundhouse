@@ -180,7 +180,7 @@ function beginCourse() {
 }
 function beginPrivateActionRound() {
   state.phase = "private-actions";
-  state.actionQueue = shuffle(state.players.map(player => player.id));
+  state.actionQueue = shuffle(state.players.filter(player => player.role !== "Guest").map(player => player.id));
   state.actionIndex = 0;
   beginPrivateActionTurn();
 }
@@ -189,8 +189,7 @@ function beginPrivateActionTurn() {
   const player = playerById(state.actionQueue[state.actionIndex]);
   showPassScreen(player, `${state.current.name}: private action`, () => {
     if (player.role === "Poisoner") renderPoisonerAction(player);
-    else if (player.role === "Doctor") renderDoctorAction(player);
-    else renderGuestAction(player);
+    else renderDoctorAction(player);
   });
 }
 function finishPrivateAction() {
@@ -237,13 +236,6 @@ function renderDoctorAction(player) {
   })));
   setScreen(root);
 }
-function renderGuestAction(player) {
-  const root = document.createDocumentFragment();
-  root.append(titleBlock(player.name, "Nothing unusual to report",
-    `You have no role action during the ${currentCourseLower()}. A separate secret swap opportunity may follow.`));
-  root.append(actions(button("Seal my report", finishPrivateAction)));
-  setScreen(root);
-}
 function personChoices(mode, excludeSelf = false) {
   const currentPlayer = mode === "vote" ? playerById(state.voteOrder[state.voteIndex]) : null;
   const grid = el("div", "choices people");
@@ -263,26 +255,21 @@ function beginSwapRound() {
   state.phase = "swapping";
   state.actionQueue = shuffle(state.players.map(player => player.id));
   state.current.swapOrder = [...state.actionQueue];
+  state.current.swapEligibility = Object.fromEntries(state.players.map(player => [player.id, Math.random() < SWAP_CHANCE]));
   state.actionIndex = 0;
   beginSwapTurn();
 }
 function beginSwapTurn() {
+  while (state.actionIndex < state.actionQueue.length && !state.current.swapEligibility[state.actionQueue[state.actionIndex]]) {
+    const skippedPlayer = playerById(state.actionQueue[state.actionIndex]);
+    recordSwapDecision(skippedPlayer, null, false);
+    state.actionIndex += 1;
+  }
   if (state.actionIndex >= state.actionQueue.length) { resolveCourse(); return; }
   const player = playerById(state.actionQueue[state.actionIndex]);
-  if (state.current.swapEligibility[player.id] === undefined) {
-    state.current.swapEligibility[player.id] = Math.random() < SWAP_CHANCE;
-  }
-  showPassScreen(player, `${state.current.name}: service`, () => renderSwapAction(player));
+  showPassScreen(player, `${state.current.name}: swap opportunity`, () => renderSwapAction(player));
 }
 function renderSwapAction(player) {
-  if (!state.current.swapEligibility[player.id]) {
-    const root = document.createDocumentFragment();
-    root.append(titleBlock(player.name, `Your ${currentCourseLower()} remains in place`,
-      `You did not receive a chance to swap ${currentCourseLower()}. You may still claim otherwise during discussion.`),
-      actions(button("Hide this report", () => finishSwapTurn(player, null, false))));
-    setScreen(root);
-    return;
-  }
   const root = document.createDocumentFragment();
   root.append(titleBlock(player.name, `You may secretly swap ${currentCourseLower()}`,
     `Choose another guest to exchange ${currentCourseLower()} with now, or decline. The exchange is applied immediately before the next player's turn.`));
@@ -308,7 +295,7 @@ function selectSwapOption(grid, targetId) {
     choice.setAttribute("aria-pressed", String(selected));
   });
 }
-function finishSwapTurn(player, targetId, offered) {
+function recordSwapDecision(player, targetId, offered) {
   const decision = {
     sequence: state.current.swapDecisions.length + 1,
     playerId: player.id,
@@ -323,6 +310,9 @@ function finishSwapTurn(player, targetId, offered) {
   decision.after = { ...state.current.mealOwners };
   state.current.swapDecisions.push(decision);
   if (offered && targetId !== null) state.current.swapHistory.push(decision);
+}
+function finishSwapTurn(player, targetId, offered) {
+  recordSwapDecision(player, targetId, offered);
   state.pending = {};
   state.actionIndex += 1;
   beginSwapTurn();
@@ -341,41 +331,8 @@ function resolveCourse() {
   state.current.healthAfter = Object.fromEntries(state.players.map(player => [player.id, player.health]));
   state.courses.push(JSON.parse(JSON.stringify(state.current)));
   state.immediatePoisonerWin = state.players.filter(player => player.role !== "Poisoner" && player.health === 0).length >= 2;
-  state.actionQueue = shuffle(state.players.map(player => player.id));
-  state.actionIndex = 0;
-  beginPrivateReportTurn();
+  renderResolution();
 }
-function beginPrivateReportTurn() {
-  if (state.actionIndex >= state.actionQueue.length) { renderResolution(); return; }
-  const player = playerById(state.actionQueue[state.actionIndex]);
-  showPassScreen(player, `${state.current.name}: private report`, () => renderPrivateReport(player));
-}
-function renderPrivateReport(player) {
-  const ownDecision = state.current.swapDecisions.find(decision => decision.playerId === player.id);
-  const switchMessage = ownDecision && ownDecision.offered
-    ? ownDecision.targetId === null
-      ? ` You were offered a swap but kept your ${currentCourseLower()}.`
-      : ` Your ${currentCourseLower()} swap with ${playerById(ownDecision.targetId).name} was carried out immediately.`
-    : " You were not offered a swap.";
-  if (player.role !== "Doctor") {
-    const root = document.createDocumentFragment();
-    root.append(titleBlock(player.name, "Your private report",
-      `You have ${player.health} health remaining.${switchMessage} Keep your role and ${currentCourseLower()} history secret unless you choose to make a claim.`),
-      actions(button("Hide this report", finishPrivateReport)));
-    setScreen(root);
-    return;
-  }
-  const protectedIncident = state.current.results.find(result => result.playerId === state.current.protectionTarget && result.protected);
-  const protectedPlayer = playerById(state.current.protectionTarget);
-  const root = document.createDocumentFragment();
-  root.append(titleBlock(player.name, protectedIncident ? "Your intervention succeeded" : "No antidote was needed",
-    protectedIncident
-      ? `You prevented ${protectedPlayer.name} from losing health during the ${currentCourseLower()}.${switchMessage} Keep that knowledge secret.`
-      : `${protectedPlayer.name} did not eat the poisoned ${currentCourseLower()}—or no poison was used.${switchMessage} Keep that knowledge secret.`),
-    actions(button("Hide this report", finishPrivateReport)));
-  setScreen(root);
-}
-function finishPrivateReport() { state.actionIndex += 1; beginPrivateReportTurn(); }
 function publicResult(course) {
   if (course.results.length === 0) return `Nobody became ill during the ${course.name.toLowerCase()}.`;
   const result = course.results[0];
@@ -458,8 +415,7 @@ function calculateScore() {
   return { incidents, unprotected, misdirected, bluffs, total: incidents * 2 + unprotected * 3 + misdirected * 2 + bluffs };
 }
 function ownerAtSeat(course, playerId) { return playerById(course.mealOwners[playerId]); }
-function renderMealMap(course, map) {
-  const courseName = course.name.toLowerCase();
+function renderMealMap(map, courseName = currentCourseLower()) {
   return state.players.map(seat => `${seat.name} had ${playerById(map[seat.id]).name}'s ${courseName}`).join("; ");
 }
 function renderFinalReveal() {
@@ -497,18 +453,18 @@ function renderFinalReveal() {
       : `${playerById(course.poisonedMealOwnerId).name}'s ${courseName} was poisoned.`;
     article.append(el("h3", "", `${index + 1}. ${course.name}`),
       el("p", "", `${poisonText} Doctor protected ${playerById(course.protectionTarget).name}.`),
-      el("p", "", `Starting places: ${renderMealMap(course, course.originalMealOwners)}.`));
+      el("p", "", `Starting places: ${renderMealMap(course.originalMealOwners, courseName)}.`));
     const decisions = el("ol", "");
     course.swapDecisions.forEach(decision => {
       const actor = playerById(decision.playerId);
       let text;
       if (!decision.offered) text = `${actor.name} was not offered a swap.`;
       else if (decision.targetId === null) text = `${actor.name} was offered a swap but kept their ${courseName}.`;
-      else text = `${actor.name} swapped ${courseName} immediately with ${playerById(decision.targetId).name}. Afterward: ${renderMealMap(course, decision.after)}.`;
+      else text = `${actor.name} swapped ${courseName} immediately with ${playerById(decision.targetId).name}. Afterward: ${renderMealMap(decision.after, courseName)}.`;
       decisions.append(el("li", "", text));
     });
     article.append(el("h4", "", "Swap sequence"), decisions,
-      el("p", "", `Final places: ${renderMealMap(course, course.mealOwners)}.`));
+      el("p", "", `Final places: ${renderMealMap(course.mealOwners, courseName)}.`));
     const list = el("ul", "");
     state.players.forEach(p => {
       const incident = course.results.find(r => r.playerId === p.id);
