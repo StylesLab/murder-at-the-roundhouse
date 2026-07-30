@@ -30,15 +30,7 @@ async function completePrivateTurn(page) {
   }
 }
 
-test('plays a complete five-course dinner with one random private pass per player', async ({ page }) => {
-  await page.addInitScript(() => {
-    let seed = 123456789;
-    Math.random = () => {
-      seed = (1664525 * seed + 1013904223) >>> 0;
-      return seed / 4294967296;
-    };
-  });
-
+async function beginDinner(page) {
   await page.goto('/poison/?debug=true');
   await page.getByRole('button', { name: 'Randomise characters' }).click();
   await page.getByRole('button', { name: 'Begin dinner' }).click();
@@ -48,7 +40,18 @@ test('plays a complete five-course dinner with one random private pass per playe
     await expect(page.getByRole('heading', { name: /You are the/ })).toBeVisible();
     await page.getByRole('button', { name: 'Hide my role and pass on' }).click();
   }
+}
 
+test('plays a complete five-course dinner with one random private pass per active player', async ({ page }) => {
+  await page.addInitScript(() => {
+    let seed = 123456789;
+    Math.random = () => {
+      seed = (1664525 * seed + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
+  });
+
+  await beginDinner(page);
   const passOrders = [];
 
   for (let course = 0; course < 5; course += 1) {
@@ -86,4 +89,42 @@ test('plays a complete five-course dinner with one random private pass per playe
   await expect(page.getByRole('heading', { name: /The guests prevail|The Poisoner triumphs|The Poisoner escapes/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'The dinner, reconstructed' })).toBeVisible();
   await expect(page.locator('.timeline article')).toHaveCount(5);
+});
+
+test('bedridden players skip meal actions but still vote', async ({ page }) => {
+  await beginDinner(page);
+
+  const bedriddenName = await page.evaluate(() => {
+    const player = state.players.find(candidate => candidate.role === 'Guest');
+    player.health = 0;
+    beginCourse();
+    return player.name;
+  });
+
+  await expect(page.getByText(/Bedridden players take no further meal actions/)).toBeVisible();
+  await page.getByRole('button', { name: 'Begin private turns' }).click();
+
+  const mealTurnNames = [];
+  for (let turn = 0; turn < 3; turn += 1) {
+    const passHeading = page.getByRole('heading', { name: /Pass the device to/ });
+    const name = (await passHeading.textContent()).replace('Pass the device to ', '').trim();
+    mealTurnNames.push(name);
+    await completePrivateTurn(page);
+  }
+
+  expect(mealTurnNames).not.toContain(bedriddenName);
+  await expect(page.getByRole('heading', { name: /reckoning and discussion/ })).toBeVisible();
+  await expect(page.locator('.health-card', { hasText: bedriddenName })).toContainText('Bedridden');
+
+  await page.evaluate(() => beginAccusations());
+  const voters = [];
+  for (let vote = 0; vote < 4; vote += 1) {
+    const passHeading = page.getByRole('heading', { name: /Pass the device to/ });
+    voters.push((await passHeading.textContent()).replace('Pass the device to ', '').trim());
+    await page.getByRole('button', { name: /I am .* — reveal my screen/ }).click();
+    await page.locator('.person-choice').first().click();
+    await page.getByRole('button', { name: 'Seal my accusation' }).click();
+  }
+
+  expect(voters).toContain(bedriddenName);
 });

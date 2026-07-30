@@ -16,7 +16,7 @@ function beginVoteTurn() {
 
 function renderVote(player) {
   const root = document.createDocumentFragment();
-  root.append(titleBlock(player.name, "Name the Poisoner", "Your accusation is secret. You cannot accuse yourself."));
+  root.append(titleBlock(player.name, "Name the Poisoner", "Your accusation is secret. You cannot accuse yourself. Bedridden players still vote."));
   root.append(personChoices("vote", !debugMode), actions(button("Seal my accusation", () => {
     if (!state.pending.vote) { showMessage("Choose a suspect before voting."); return; }
     state.votes[player.id] = state.pending.vote;
@@ -54,7 +54,7 @@ function renderFinalReveal() {
   const score = calculateScore();
   const root = document.createDocumentFragment();
   let endingExplanation;
-  if (state.immediatePoisonerWin) endingExplanation = "Two non-Poisoners became critically ill before the final accusation. The Poisoner wins immediately.";
+  if (state.immediatePoisonerWin) endingExplanation = "Two non-Poisoners became bedridden before the final accusation. The Poisoner wins immediately.";
   else if (!qualifiedPoisoner) endingExplanation = "The Poisoner caused no unprotected health loss during dinner, so the guests win automatically.";
   else endingExplanation = `${poisoner.name} received ${votesForPoisoner} accusation vote${votesForPoisoner === 1 ? "" : "s"}. Three were needed to expose the Poisoner.`;
   root.append(titleBlock("The masks fall", investigatorsWin ? "The guests prevail" : state.immediatePoisonerWin ? "The Poisoner triumphs" : "The Poisoner escapes", endingExplanation));
@@ -106,7 +106,8 @@ function renderFinalReveal() {
       const incident = course.results.find(r => r.playerId === p.id);
       const outcome = incident ? (incident.protected ? `ate the poisoned ${courseName}, but was protected` : `ate the poisoned ${courseName} and was unprotected`) : `did not eat the poisoned ${courseName}`;
       const mealOwner = ownerAtSeat(course, p.id);
-      list.append(el("li", "", `${p.name} ate ${mealOwner.name}'s ${courseName}; ${outcome}; ${course.healthAfter[p.id]} health remaining.`));
+      const healthText = course.healthAfter[p.id] === 0 ? "bedridden" : `${course.healthAfter[p.id]} health remaining`;
+      list.append(el("li", "", `${p.name} ate ${mealOwner.name}'s ${courseName}; ${outcome}; ${healthText}.`));
     });
     article.append(list, el("p", "", `Public report: ${publicResult(course)} ${evidenceFor(course)}`));
     timeline.append(article);
