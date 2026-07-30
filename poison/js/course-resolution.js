@@ -24,7 +24,7 @@ function resolveCourse() {
   const poisonedOwner = state.current.poisonedMealOwnerId;
   if (poisonedOwner !== null) {
     const eater = state.players.find(player => state.current.mealOwners[player.id] === poisonedOwner);
-    if (eater) {
+    if (eater && eater.health > 0) {
       const protectedByDoctor = state.current.protectionTarget === eater.id;
       if (!protectedByDoctor) eater.health = Math.max(0, eater.health - 1);
       state.current.results.push({ playerId: eater.id, protected: protectedByDoctor, healthAfter: eater.health, mealOwnerId: poisonedOwner });
@@ -40,9 +40,9 @@ function publicResult(course) {
   if (course.results.length === 0) return `Nobody became ill during the ${course.name.toLowerCase()}.`;
   const result = course.results[0];
   const player = playerById(result.playerId);
-  return result.protected
-    ? `${player.name} suddenly felt faint but recovered. The doctor’s intervention appears to have saved someone.`
-    : `${player.name} was taken seriously ill and now has ${result.healthAfter} health remaining.`;
+  if (result.protected) return `${player.name} suddenly felt faint but recovered. The doctor’s intervention appears to have saved someone.`;
+  if (result.healthAfter === 0) return `${player.name} is now bedridden. They will take no further meal actions, but may still discuss and vote.`;
+  return `${player.name} was taken seriously ill and now has ${result.healthAfter} health remaining.`;
 }
 
 function evidenceFor(course) {
@@ -58,7 +58,7 @@ function renderCourseDiscussion() {
   state.phase = "discussion";
   const root = document.createDocumentFragment();
   root.append(titleBlock(`Course ${state.courseIndex + 1}`, `${state.current.name}: reckoning and discussion`,
-    "Review what happened, then share claims and challenge alibis."));
+    "Review what happened, then share claims and challenge alibis. Bedridden players remain part of the discussion."));
   const result = el("div", "result");
   result.append(el("p", "", publicResult(state.current)), el("p", "", evidenceFor(state.current)));
   const portraits = el("div", "mini-portraits");
@@ -78,7 +78,7 @@ function renderHealthBoard() {
   state.players.forEach(player => {
     const item = el("div", `health-card${player.health === 0 ? " critically-ill" : ""}`);
     item.append(safeImage(player.image, player.name), el("strong", "", player.name),
-      el("span", "health-pips", player.health === 0 ? "Critically ill" : "♥".repeat(player.health)));
+      el("span", "health-pips", player.health === 0 ? "Bedridden" : "♥".repeat(player.health)));
     board.append(item);
   });
   return board;
