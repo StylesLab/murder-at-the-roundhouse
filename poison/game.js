@@ -166,7 +166,7 @@ function beginCourse() {
   };
   const root = document.createDocumentFragment();
   root.append(titleBlock(`Course ${state.courseIndex + 1} of ${COURSE_NAMES.length}`, state.current.name,
-    `Each player receives the device once. The Poisoner and Doctor make their choices first, then all swaps are applied in the same pass order.`));
+    `Each player receives the device once in a random order. Role choices and swap choices are recorded privately, then all swaps are applied in that same pass order.`));
   const courseImage = safeImage(COURSE_IMAGES[state.current.name], `${state.current.name} course`, "course-image");
   courseImage.alt = `${state.current.name} course illustration`;
   root.append(courseImage, actions(button("Begin private turns", beginCourseActionRound)));
@@ -174,10 +174,7 @@ function beginCourse() {
 }
 function beginCourseActionRound() {
   state.phase = "course-actions";
-  const poisoner = state.players.find(player => player.role === "Poisoner");
-  const doctor = state.players.find(player => player.role === "Doctor");
-  const guests = shuffle(state.players.filter(player => player.role === "Guest"));
-  state.actionQueue = [poisoner.id, doctor.id, ...guests.map(player => player.id)];
+  state.actionQueue = shuffle(state.players.map(player => player.id));
   state.current.swapOrder = [...state.actionQueue];
   state.current.swapEligibility = Object.fromEntries(state.players.map(player => [player.id, Math.random() < SWAP_CHANCE]));
   state.actionIndex = 0;
@@ -375,6 +372,7 @@ function renderHealthBoard() {
   });
   return board;
 }
+
 function beginAccusations() {
   state.phase = "accusation"; state.voteOrder = shuffle(state.players.map(p => p.id)); state.voteIndex = 0; state.votes = {};
   beginVoteTurn();
@@ -435,7 +433,9 @@ function renderFinalReveal() {
   state.courses.forEach((course, index) => {
     const article = document.createElement("article");
     const courseName = course.name.toLowerCase();
-    const poisonText = course.poisonedMealOwnerId === null ? `No ${courseName} was poisoned.` : `${playerById(course.poisonedMealOwnerId).name}'s ${courseName} was poisoned.`;
+    const poisonText = course.poisonedMealOwnerId === null
+      ? `No ${courseName} was poisoned.`
+      : `${playerById(course.poisonedMealOwnerId).name}'s ${courseName} was poisoned.`;
     article.append(el("h3", "", `${index + 1}. ${course.name}`),
       el("p", "", `${poisonText} Doctor protected ${playerById(course.protectionTarget).name}.`),
       el("p", "", `Starting places: ${renderMealMap(course.originalMealOwners, courseName)}.`));
@@ -445,16 +445,17 @@ function renderFinalReveal() {
       let text;
       if (!decision.offered) text = `${actor.name} was not offered a swap.`;
       else if (decision.targetId === null) text = `${actor.name} was offered a swap but kept their ${courseName}.`;
-      else text = `${actor.name} swapped ${courseName} with ${playerById(decision.targetId).name}. Afterward: ${renderMealMap(decision.after, courseName)}.`;
+      else text = `${actor.name} swapped ${courseName} immediately with ${playerById(decision.targetId).name}. Afterward: ${renderMealMap(decision.after, courseName)}.`;
       decisions.append(el("li", "", text));
     });
-    article.append(el("h4", "", "Swap sequence"), decisions, el("p", "", `Final places: ${renderMealMap(course.mealOwners, courseName)}.`));
+    article.append(el("h4", "", "Swap sequence"), decisions,
+      el("p", "", `Final places: ${renderMealMap(course.mealOwners, courseName)}.`));
     const list = el("ul", "");
-    state.players.forEach(player => {
-      const incident = course.results.find(result => result.playerId === player.id);
+    state.players.forEach(p => {
+      const incident = course.results.find(r => r.playerId === p.id);
       const outcome = incident ? (incident.protected ? `ate the poisoned ${courseName}, but was protected` : `ate the poisoned ${courseName} and was unprotected`) : `did not eat the poisoned ${courseName}`;
-      const mealOwner = ownerAtSeat(course, player.id);
-      list.append(el("li", "", `${player.name} ate ${mealOwner.name}'s ${courseName}; ${outcome}; ${course.healthAfter[player.id]} health remaining.`));
+      const mealOwner = ownerAtSeat(course, p.id);
+      list.append(el("li", "", `${p.name} ate ${mealOwner.name}'s ${courseName}; ${outcome}; ${course.healthAfter[p.id]} health remaining.`));
     });
     article.append(list, el("p", "", `Public report: ${publicResult(course)} ${evidenceFor(course)}`)); timeline.append(article);
   });
@@ -479,6 +480,7 @@ function renderCurrentPhase() {
   else if (state.phase === "course-intro") beginCourse();
   else renderSelection();
 }
+
 function renderDebug() {
   if (!debugMode) { debugRoot.hidden = true; return; }
   debugRoot.hidden = false;
@@ -533,6 +535,7 @@ function debugAdvance() {
   }
   showMessage("Use the visible choice controls for this secret phase.");
 }
+
 window.addEventListener("beforeunload", event => {
   if (!["selection", "final"].includes(state.phase)) { event.preventDefault(); event.returnValue = ""; }
 });
