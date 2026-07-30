@@ -160,46 +160,69 @@ function beginCourse() {
   state.phase = "course-intro";
   const mealOwners = Object.fromEntries(state.players.map(player => [player.id, player.id]));
   state.current = {
-    name: COURSE_NAMES[state.courseIndex],
-    poisonedMealOwnerId: null,
-    protectionTarget: null,
-    mealOwners,
-    originalMealOwners: { ...mealOwners },
-    swapEligibility: {},
-    swapDecisions: [],
-    swapHistory: [],
-    results: []
+    name: COURSE_NAMES[state.courseIndex], poisonedMealOwnerId: null, protectionTarget: null,
+    mealOwners, originalMealOwners: { ...mealOwners }, swapEligibility: {}, swapChoices: {},
+    swapDecisions: [], swapHistory: [], results: []
   };
   const root = document.createDocumentFragment();
   root.append(titleBlock(`Course ${state.courseIndex + 1} of ${COURSE_NAMES.length}`, state.current.name,
-    `The Poisoner targets a serving of ${currentCourseLower()} and the Doctor protects a guest. Then each player may secretly receive a chance to swap ${currentCourseLower()}. Swaps are applied immediately in pass order.`));
+    `Each player receives the device once in a random order. Role choices and swap choices are recorded privately, then all swaps are applied in that same pass order.`));
   const courseImage = safeImage(COURSE_IMAGES[state.current.name], `${state.current.name} course`, "course-image");
   courseImage.alt = `${state.current.name} course illustration`;
-  root.append(courseImage, actions(button("Begin secret actions", beginPrivateActionRound)));
+  root.append(courseImage, actions(button("Begin private turns", beginCourseActionRound)));
   setScreen(root);
 }
-function beginPrivateActionRound() {
-  state.phase = "private-actions";
-  state.actionQueue = shuffle(state.players.filter(player => player.role !== "Guest").map(player => player.id));
+function beginCourseActionRound() {
+  state.phase = "course-actions";
+  state.actionQueue = shuffle(state.players.map(player => player.id));
+  state.current.swapOrder = [...state.actionQueue];
+  state.current.swapEligibility = Object.fromEntries(state.players.map(player => [player.id, Math.random() < SWAP_CHANCE]));
   state.actionIndex = 0;
-  beginPrivateActionTurn();
+  beginCourseActionTurn();
 }
-function beginPrivateActionTurn() {
-  if (state.actionIndex >= state.actionQueue.length) { beginSwapRound(); return; }
+function beginCourseActionTurn() {
+  if (state.actionIndex >= state.actionQueue.length) { applySwapsAndResolve(); return; }
   const player = playerById(state.actionQueue[state.actionIndex]);
-  showPassScreen(player, `${state.current.name}: private action`, () => {
-    if (player.role === "Poisoner") renderPoisonerAction(player);
-    else renderDoctorAction(player);
-  });
+  showPassScreen(player, `${state.current.name}: private turn`, () => renderCourseAction(player));
 }
-function finishPrivateAction() {
+function renderCourseAction(player) {
+  if (player.role === "Poisoner") { renderPoisonerAction(player); return; }
+  if (player.role === "Doctor") { renderDoctorAction(player); return; }
+  renderGuestAction(player);
+}
+function finishCourseAction() {
   state.pending = {};
   state.actionIndex += 1;
-  beginPrivateActionTurn();
+  beginCourseActionTurn();
+}
+function appendSwapChoice(root, player, afterChoice) {
+  if (!state.current.swapEligibility[player.id]) {
+    root.append(el("p", "status", `You were not offered a swap during the ${currentCourseLower()}.`),
+      actions(button("Hide my screen and pass on", () => {
+        state.current.swapChoices[player.id] = { offered: false, targetId: null };
+        afterChoice();
+      })));
+    return;
+  }
+  root.append(el("h2", "", `Optional ${currentCourseLower()} swap`),
+    el("p", "lede", `Choose another guest to exchange ${currentCourseLower()} with, or keep yours. The swap will be applied later in pass order.`));
+  const grid = el("div", "choices people");
+  state.players.filter(person => person.id !== player.id).forEach(person => {
+    const choice = button("", () => selectSwapOption(grid, person.id), "person-choice");
+    choice.dataset.id = person.id; choice.setAttribute("aria-pressed", "false");
+    choice.append(safeImage(person.image, person.name), el("span", "", `Swap with ${person.name}`)); grid.append(choice);
+  });
+  const decline = button(`Keep my ${currentCourseLower()}`, () => selectSwapOption(grid, null), "choice");
+  decline.dataset.id = "none"; decline.setAttribute("aria-pressed", "false"); grid.append(decline);
+  root.append(grid, actions(button("Seal my turn and pass on", () => {
+    if (state.pending.swap === undefined) { showMessage(`Choose a swap target, or keep your ${currentCourseLower()}.`); return; }
+    state.current.swapChoices[player.id] = { offered: true, targetId: state.pending.swap };
+    afterChoice();
+  })));
 }
 function renderPoisonerAction(player) {
   const root = document.createDocumentFragment();
-  root.append(titleBlock(player.name, `Choose ${currentCourseLower()} to poison`, `Target the ${currentCourseLower()} currently placed in front of one guest. Later swaps may move it. You may also choose no poison.`));
+  root.append(titleBlock(player.name, `Choose ${currentCourseLower()} to poison`, `Make your Poisoner choice, then complete any swap shown below before passing the device.`));
   if (!poisonerHasQualified()) root.append(el("p", "status warning",
     "Victory requirement not yet met: you must cause at least one non-Poisoner to lose unprotected health before dinner ends."));
   const grid = el("div", "choices people");
@@ -211,10 +234,14 @@ function renderPoisonerAction(player) {
   });
   const decline = button(`Use no poison in the ${currentCourseLower()}`, () => selectPoisonTarget(grid, null), "choice");
   decline.dataset.id = "none"; decline.setAttribute("aria-pressed", "false"); grid.append(decline);
-  root.append(grid, actions(button("Seal my choice", () => {
+  root.append(grid, actions(button("Continue to swap", () => {
     if (state.pending.poison === undefined) { showMessage("Choose a poison decision."); return; }
     state.current.poisonedMealOwnerId = state.pending.poison;
-    finishPrivateAction();
+    state.pending = {};
+    const next = document.createDocumentFragment();
+    next.append(titleBlock(player.name, `${currentCourse()}: swap`, "Your poison choice is sealed."));
+    appendSwapChoice(next, player, finishCourseAction);
+    setScreen(next);
   })));
   setScreen(root);
 }
@@ -228,12 +255,22 @@ function selectPoisonTarget(grid, targetId) {
 }
 function renderDoctorAction(player) {
   const root = document.createDocumentFragment();
-  root.append(titleBlock(player.name, "Choose someone to protect", `You may protect yourself. Protection applies to whoever finally eats that guest's ${currentCourseLower()}.`));
-  root.append(personChoices("protection"), actions(button("Seal my choice", () => {
+  root.append(titleBlock(player.name, "Choose someone to protect", `Make your Doctor choice, then complete any swap shown below before passing the device.`));
+  root.append(personChoices("protection"), actions(button("Continue to swap", () => {
     if (!state.pending.protection) { showMessage("Choose a person to protect."); return; }
     state.current.protectionTarget = state.pending.protection;
-    finishPrivateAction();
+    state.pending = {};
+    const next = document.createDocumentFragment();
+    next.append(titleBlock(player.name, `${currentCourse()}: swap`, "Your protection choice is sealed."));
+    appendSwapChoice(next, player, finishCourseAction);
+    setScreen(next);
   })));
+  setScreen(root);
+}
+function renderGuestAction(player) {
+  const root = document.createDocumentFragment();
+  root.append(titleBlock(player.name, `${currentCourse()}: private turn`, "You have no role action this course."));
+  appendSwapChoice(root, player, finishCourseAction);
   setScreen(root);
 }
 function personChoices(mode, excludeSelf = false) {
@@ -250,43 +287,6 @@ function personChoices(mode, excludeSelf = false) {
   });
   return grid;
 }
-
-function beginSwapRound() {
-  state.phase = "swapping";
-  state.actionQueue = shuffle(state.players.map(player => player.id));
-  state.current.swapOrder = [...state.actionQueue];
-  state.current.swapEligibility = Object.fromEntries(state.players.map(player => [player.id, Math.random() < SWAP_CHANCE]));
-  state.actionIndex = 0;
-  beginSwapTurn();
-}
-function beginSwapTurn() {
-  while (state.actionIndex < state.actionQueue.length && !state.current.swapEligibility[state.actionQueue[state.actionIndex]]) {
-    const skippedPlayer = playerById(state.actionQueue[state.actionIndex]);
-    recordSwapDecision(skippedPlayer, null, false);
-    state.actionIndex += 1;
-  }
-  if (state.actionIndex >= state.actionQueue.length) { resolveCourse(); return; }
-  const player = playerById(state.actionQueue[state.actionIndex]);
-  showPassScreen(player, `${state.current.name}: swap opportunity`, () => renderSwapAction(player));
-}
-function renderSwapAction(player) {
-  const root = document.createDocumentFragment();
-  root.append(titleBlock(player.name, `You may secretly swap ${currentCourseLower()}`,
-    `Choose another guest to exchange ${currentCourseLower()} with now, or decline. The exchange is applied immediately before the next player's turn.`));
-  const grid = el("div", "choices people");
-  state.players.filter(person => person.id !== player.id).forEach(person => {
-    const choice = button("", () => selectSwapOption(grid, person.id), "person-choice");
-    choice.dataset.id = person.id; choice.setAttribute("aria-pressed", "false");
-    choice.append(safeImage(person.image, person.name), el("span", "", `Swap ${currentCourseLower()} with ${person.name}`)); grid.append(choice);
-  });
-  const decline = button(`Keep my ${currentCourseLower()}`, () => selectSwapOption(grid, null), "choice");
-  decline.dataset.id = "none"; decline.setAttribute("aria-pressed", "false"); grid.append(decline);
-  root.append(grid, actions(button("Seal my choice", () => {
-    if (state.pending.swap === undefined) { showMessage(`Choose a swap target, or keep your ${currentCourseLower()}.`); return; }
-    finishSwapTurn(player, state.pending.swap, true);
-  })));
-  setScreen(root);
-}
 function selectSwapOption(grid, targetId) {
   state.pending.swap = targetId;
   grid.querySelectorAll("button").forEach(choice => {
@@ -296,13 +296,7 @@ function selectSwapOption(grid, targetId) {
   });
 }
 function recordSwapDecision(player, targetId, offered) {
-  const decision = {
-    sequence: state.current.swapDecisions.length + 1,
-    playerId: player.id,
-    offered,
-    targetId,
-    before: { ...state.current.mealOwners }
-  };
+  const decision = { sequence: state.current.swapDecisions.length + 1, playerId: player.id, offered, targetId, before: { ...state.current.mealOwners } };
   if (offered && targetId !== null) {
     [state.current.mealOwners[player.id], state.current.mealOwners[targetId]] =
       [state.current.mealOwners[targetId], state.current.mealOwners[player.id]];
@@ -311,13 +305,14 @@ function recordSwapDecision(player, targetId, offered) {
   state.current.swapDecisions.push(decision);
   if (offered && targetId !== null) state.current.swapHistory.push(decision);
 }
-function finishSwapTurn(player, targetId, offered) {
-  recordSwapDecision(player, targetId, offered);
-  state.pending = {};
-  state.actionIndex += 1;
-  beginSwapTurn();
+function applySwapsAndResolve() {
+  state.current.swapOrder.forEach(playerId => {
+    const player = playerById(playerId);
+    const choice = state.current.swapChoices[playerId] ?? { offered: false, targetId: null };
+    recordSwapDecision(player, choice.targetId, choice.offered);
+  });
+  resolveCourse();
 }
-
 function resolveCourse() {
   const poisonedOwner = state.current.poisonedMealOwnerId;
   if (poisonedOwner !== null) {
@@ -331,7 +326,7 @@ function resolveCourse() {
   state.current.healthAfter = Object.fromEntries(state.players.map(player => [player.id, player.health]));
   state.courses.push(JSON.parse(JSON.stringify(state.current)));
   state.immediatePoisonerWin = state.players.filter(player => player.role !== "Poisoner" && player.health === 0).length >= 2;
-  renderResolution();
+  renderCourseDiscussion();
 }
 function publicResult(course) {
   if (course.results.length === 0) return `Nobody became ill during the ${course.name.toLowerCase()}.`;
@@ -349,15 +344,20 @@ function evidenceFor(course) {
   if (course.swapHistory.length === 1) return `One serving of ${courseName} appeared to have been disturbed.`;
   return `A faint almond scent lingered over one serving of ${courseName}.`;
 }
-function renderResolution() {
-  state.phase = "resolution";
+function renderCourseDiscussion() {
+  state.phase = "discussion";
   const root = document.createDocumentFragment();
-  root.append(titleBlock(`Course ${state.courseIndex + 1}`, `${state.current.name}: the reckoning`, ""));
+  root.append(titleBlock(`Course ${state.courseIndex + 1}`, `${state.current.name}: reckoning and discussion`,
+    "Review what happened, then share claims and challenge alibis."));
   const result = el("div", "result");
   result.append(el("p", "", publicResult(state.current)), el("p", "", evidenceFor(state.current)));
-  root.append(result, renderHealthBoard(), actions(button(
-    state.immediatePoisonerWin ? "Reveal the Poisoner’s victory" : "Open the drawing room for discussion",
-    state.immediatePoisonerWin ? renderFinalReveal : renderDiscussion
+  const portraits = el("div", "mini-portraits");
+  state.players.forEach(player => portraits.append(safeImage(player.image, player.name)));
+  const prompts = el("ul", "prompts");
+  ["Were you offered a chance to swap?", `Did you exchange ${currentCourseLower()}, and with whom?`, `Whose ${currentCourseLower()} do you believe you finally ate?`, "Why might the Doctor have protected that person?"].forEach(prompt => prompts.append(el("li", "", prompt)));
+  root.append(result, renderHealthBoard(), portraits, prompts, actions(button(
+    state.immediatePoisonerWin ? "Reveal the Poisoner’s victory" : state.courseIndex === COURSE_NAMES.length - 1 ? "Begin accusations" : "Start the next course",
+    state.immediatePoisonerWin ? renderFinalReveal : () => { state.courseIndex += 1; beginCourse(); }
   )));
   setScreen(root);
 }
@@ -371,21 +371,6 @@ function renderHealthBoard() {
     board.append(item);
   });
   return board;
-}
-function renderDiscussion() {
-  state.phase = "discussion";
-  const root = document.createDocumentFragment();
-  root.append(titleBlock(state.current.name, "Discussion", "Share claims and challenge alibis. Start the next course whenever the table is ready."));
-  const portraits = el("div", "mini-portraits");
-  state.players.forEach(p => portraits.append(safeImage(p.image, p.name)));
-  const prompts = el("ul", "prompts");
-  ["Were you offered a chance to swap?", `Did you exchange ${currentCourseLower()}, and with whom?`, `Whose ${currentCourseLower()} do you believe you finally ate?`, "Why might the Doctor have protected that person?"].forEach(p => prompts.append(el("li", "", p)));
-  root.append(portraits, el("div", "result", publicResult(state.current)), actions(
-    button(state.courseIndex === COURSE_NAMES.length - 1 ? "Begin accusations" : "Start the next course", () => {
-      state.courseIndex += 1; beginCourse();
-    })
-  ), prompts);
-  setScreen(root);
 }
 
 function beginAccusations() {
@@ -491,8 +476,7 @@ function confirmReset(promptText, callback) {
 }
 function renderCurrentPhase() {
   if (state.phase === "final") renderFinalReveal();
-  else if (state.phase === "discussion") renderDiscussion();
-  else if (state.phase === "resolution") renderResolution();
+  else if (state.phase === "discussion") renderCourseDiscussion();
   else if (state.phase === "course-intro") beginCourse();
   else renderSelection();
 }
@@ -543,8 +527,8 @@ function debugRoleSelect(role) {
 function debugAdvance() {
   if (state.phase === "selection") { if (state.selectedIds.length < 4) state.selectedIds = window.ROUNDHOUSE_CHARACTERS.slice(0, 4).map(c => c.id); startGame(); return; }
   if (state.phase === "roles") { state.roleRevealIndex = 3; revealRole(); return; }
-  if (state.phase === "course-intro") { beginPrivateActionRound(); return; }
-  if (["resolution", "discussion"].includes(state.phase)) { state.courseIndex += 1; beginCourse(); return; }
+  if (state.phase === "course-intro") { beginCourseActionRound(); return; }
+  if (state.phase === "discussion") { state.courseIndex += 1; beginCourse(); return; }
   if (state.phase === "accusation") {
     const poisoner = state.players.find(p => p.role === "Poisoner");
     state.players.forEach(p => { state.votes[p.id] = poisoner.id; }); renderFinalReveal(); return;
