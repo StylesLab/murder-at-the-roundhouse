@@ -127,4 +127,4 @@ test('bedridden players skip meal actions but still vote', async ({ page }) => {
   }
 
   expect(voters).toContain(bedriddenName);
-}
+});
