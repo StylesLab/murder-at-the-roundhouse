@@ -49,7 +49,7 @@ function renderWelcome() {
         <li>The app secretly chooses the murderer at the beginning.</li>
         <li>Play one physical Old Maid round in each room.</li>
         <li>The player left holding the Joker receives no clue.</li>
-        <li>Everyone else has 50% of their innocent remaining guests removed automatically.</li>
+        <li>For everyone else, the app automatically excludes 50% of the remaining innocent guests.</li>
         <li>After four rooms, each detective makes a final accusation.</li>
       </ol>
       <button class="primary" data-action="setup">Enter the Roundhouse</button>
@@ -117,7 +117,7 @@ function renderPass() {
 function renderBoard() {
   const player = state.players[state.activePlayer];
   const blocked = player.id === state.jokerHolder;
-  const removedThisRound = blocked ? [] : eliminateHalfOfInnocents(player);
+  const removedThisRound = blocked ? [] : excludeHalfOfRemainingInnocents(player);
   const room = ROOMS[state.roomIndex];
 
   return `
@@ -125,25 +125,28 @@ function renderBoard() {
       <p class="kicker">${room.name}</p>
       <h1>${escapeHtml(player.name)}'s suspect board</h1>
       ${blocked
-        ? `<div class="notice danger"><strong>The Joker blocked your investigation.</strong><p>You receive no clue and no suspects are removed in this room.</p></div>`
-        : `<div class="notice"><strong>Your clue</strong><p>${room.clue}</p><p><strong>${removedThisRound.length}</strong> innocent guest${removedThisRound.length === 1 ? " has" : "s have"} been removed. The murderer remains on your board.</p></div>`}
+        ? `<div class="notice danger"><strong>The Joker blocked your investigation.</strong><p>You receive no clue and nobody is excluded from enquiries in this room.</p></div>`
+        : `<div class="notice"><strong>Your clue</strong><p>${room.clue}</p><p>The app has randomly marked <strong>${removedThisRound.length}</strong> innocent guest${removedThisRound.length === 1 ? "" : "s"} as excluded from enquiries. The murderer remains under suspicion.</p></div>`}
       <div class="progress" aria-label="${player.remaining.length} suspects currently remain">
         <span style="width:${(player.remaining.length / CHARACTERS.length) * 100}%"></span>
       </div>
-      <div class="board">
+      <div class="board" aria-label="Suspect status board">
         ${CHARACTERS.map(character => renderSuspect(character, player)).join("")}
       </div>
-      <button class="primary" data-action="save-board">Hide board and pass on</button>
+      <p class="selection-status">No selection is required. Review the exclusions, then continue.</p>
+      <button class="primary" data-action="save-board">Continue</button>
     </section>`;
 }
 
 function renderSuspect(character, player) {
   const active = player.remaining.includes(character.id);
   return `
-    <article class="suspect ${active ? "" : "removed"}">
-      <img src="../poison/${character.image}" alt="">
+    <article class="suspect-card ${active ? "" : "excluded"}">
+      <div class="portrait-frame">
+        <img src="../poison/${character.image}" alt="Portrait of ${escapeHtml(character.name)}">
+      </div>
       <strong>${escapeHtml(character.name)}</strong>
-      <span>${active ? "Still suspected" : "Eliminated"}</span>
+      <span>${active ? "Still under suspicion" : "Excluded from enquiries"}</span>
     </article>`;
 }
 
@@ -187,8 +190,10 @@ function renderFinalChoice() {
       <p>Your accusation is private until everyone has chosen.</p>
       <div class="board final-board">
         ${candidates.map(character => `
-          <button class="suspect" data-action="accuse" data-id="${character.id}">
-            <img src="../poison/${character.image}" alt="">
+          <button class="suspect-choice" data-action="accuse" data-id="${character.id}">
+            <div class="portrait-frame">
+              <img src="../poison/${character.image}" alt="Portrait of ${escapeHtml(character.name)}">
+            </div>
             <strong>${escapeHtml(character.name)}</strong>
             <span>Accuse</span>
           </button>`).join("")}
@@ -219,7 +224,9 @@ function renderWinner() {
     <section class="panel hero">
       <p class="kicker">Case closed</p>
       <h1>${escapeHtml(state.winner.name)} wins</h1>
-      <img class="culprit" src="../poison/${murderer.image}" alt="Portrait of ${escapeHtml(murderer.name)}">
+      <div class="culprit-frame">
+        <img class="culprit" src="../poison/${murderer.image}" alt="Portrait of ${escapeHtml(murderer.name)}">
+      </div>
       <h2>${escapeHtml(murderer.name)}</h2>
       <p>${escapeHtml(state.winner.name)} correctly identified the murderer.</p>
       <button class="primary" data-action="restart">Play again</button>
@@ -261,16 +268,26 @@ function selectHolder(id) {
   changePhase("pass");
 }
 
-function eliminateHalfOfInnocents(player) {
+function excludeHalfOfRemainingInnocents(player) {
   if (player.processedRoom === state.roomIndex) return [];
 
   const innocentIds = player.remaining.filter(id => id !== state.murdererId);
   const removeCount = Math.floor(innocentIds.length / 2);
-  const shuffled = [...innocentIds].sort(() => Math.random() - 0.5);
+  const shuffled = shuffle(innocentIds);
   const removed = shuffled.slice(0, removeCount);
+
   player.remaining = player.remaining.filter(id => !removed.includes(id));
   player.processedRoom = state.roomIndex;
   return removed;
+}
+
+function shuffle(values) {
+  const result = [...values];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
 }
 
 function saveBoard() {
