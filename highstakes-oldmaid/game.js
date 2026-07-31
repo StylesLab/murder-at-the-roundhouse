@@ -1,141 +1,373 @@
 "use strict";
 
-const app = document.getElementById('game');
+const app = document.getElementById("game");
 const CHARACTERS = window.ROUNDHOUSE_CHARACTERS.slice(0, 16);
 const ROOMS = window.HIGH_STAKES_ROOMS;
 
 const state = {
-  phase: 'welcome',
+  phase: "welcome",
   players: [],
   roomIndex: 0,
   activePlayer: 0,
   jokerHolder: null,
-  winners: [],
-  tieBreakOrder: []
+  selected: new Set(),
+  finalists: [],
+  winner: null
 };
 
 function render() {
-  const screens = {
+  const views = {
     welcome: renderWelcome,
     setup: renderSetup,
     room: renderRoom,
     holder: renderHolder,
-    boardPass: renderBoardPass,
+    pass: renderPass,
     board: renderBoard,
-    roundSummary: renderRoundSummary,
+    summary: renderSummary,
+    finalPass: renderFinalPass,
+    finalChoice: renderFinalChoice,
     winner: renderWinner,
     tieBreak: renderTieBreak
   };
-  app.innerHTML = screens[state.phase]();
-  bind();
+
+  app.innerHTML = views[state.phase]();
+  bindEvents();
+  app.focus();
 }
 
 function renderWelcome() {
-  return `<section class="panel hero"><p class="kicker">A Roundhouse card mystery</p><h1>The Joker's Secret</h1><p>Play a physical game inspired by Old Maid. The app adds rooms, narrative, suspect boards and scoring, but never needs to know your cards.</p><div class="notice"><strong>You need:</strong> four players, one standard deck and one Joker. Remove one ordinary card so every non-Joker card can form a pair.</div><p>At the end of each room, the player holding the Joker gets no clue. Every other player removes half of their remaining suspects. Reach one suspect to solve the mystery.</p><button class="primary" data-action="setup">Enter the Roundhouse</button></section>`;
+  return `
+    <section class="panel hero">
+      <p class="kicker">A four-player Roundhouse mystery</p>
+      <h1>The Joker's Secret</h1>
+      <p>Play Old Maid with real cards while this app tells the story and manages each detective's private suspect board.</p>
+      <div class="notice">
+        <strong>Prepare the deck</strong>
+        <p>Use one standard deck plus one Joker. Remove one ordinary card so every non-Joker card can form a pair.</p>
+      </div>
+      <ol class="rules">
+        <li>Play one physical Old Maid round in each room.</li>
+        <li>The player left holding the Joker receives no clue.</li>
+        <li>Everyone else eliminates half of their remaining suspects.</li>
+        <li>After four rooms, each detective makes a final accusation.</li>
+      </ol>
+      <button class="primary" data-action="setup">Enter the Roundhouse</button>
+    </section>`;
 }
 
 function renderSetup() {
-  return `<section class="panel"><p class="kicker">Detective register</p><h1>Who is investigating?</h1><form id="setup-form" class="form-grid">${[1,2,3,4].map(n=>`<label>Player ${n}<input name="player${n}" maxlength="24" required value="Player ${n}"></label>`).join('')}<button class="primary" type="submit">Begin in the Main Hall</button></form></section>`;
+  return `
+    <section class="panel">
+      <p class="kicker">Detective register</p>
+      <h1>Who is investigating?</h1>
+      <form id="setup-form" class="form-grid">
+        ${[1, 2, 3, 4].map(number => `
+          <label>Player ${number}
+            <input name="player${number}" maxlength="24" required value="Player ${number}">
+          </label>`).join("")}
+        <button class="primary" type="submit">Begin the investigation</button>
+      </form>
+    </section>`;
 }
 
 function renderRoom() {
   const room = ROOMS[state.roomIndex];
-  return `<section class="panel"><p class="kicker">Room ${state.roomIndex + 1}</p><h1>${room.name}</h1><img class="room-art" src="${room.image}" alt="${room.name}" onerror="this.hidden=true"><p>${room.narrative}</p><div class="notice"><strong>Play the physical card round now.</strong><br>Draw from the player on your left and discard pairs. Stop when only the Joker remains unpaired.</div><button class="primary" data-action="finish-room">The round is over</button></section>`;
+  return `
+    <section class="panel room-panel">
+      <p class="kicker">Room ${state.roomIndex + 1} of ${ROOMS.length}</p>
+      <h1>${room.name}</h1>
+      <div class="room-marker" aria-hidden="true">${state.roomIndex + 1}</div>
+      <p class="story">${room.narrative}</p>
+      <div class="notice">
+        <strong>Play the physical card round now.</strong>
+        <p>Draw from the player on your left and discard every pair. Continue until only the Joker remains unpaired.</p>
+      </div>
+      <button class="primary" data-action="finish-room">The card round is over</button>
+    </section>`;
 }
 
 function renderHolder() {
-  return `<section class="panel"><p class="kicker">The Joker remains</p><h1>Who holds the Joker?</h1><p>Choose the player left holding it. They receive no clue in this room.</p><div class="players">${state.players.map(p=>`<button class="player-card secondary" data-action="holder" data-id="${p.id}"><strong>${p.name}</strong><br>${p.remaining.length} suspects remain</button>`).join('')}</div></section>`;
+  return `
+    <section class="panel">
+      <p class="kicker">The Joker remains</p>
+      <h1>Who holds the Joker?</h1>
+      <p>Choose the player who was left holding it. That player will not receive this room's clue.</p>
+      <div class="players">
+        ${state.players.map(player => `
+          <button class="player-card secondary" data-action="holder" data-id="${player.id}">
+            <strong>${escapeHtml(player.name)}</strong>
+            <span>${player.remaining.length} suspects remain</span>
+          </button>`).join("")}
+      </div>
+    </section>`;
 }
 
-function renderBoardPass() {
+function renderPass() {
   const player = state.players[state.activePlayer];
-  return `<section class="panel pass"><p class="kicker">Private suspect board</p><h1>Pass the device to ${player.name}</h1><p>Everyone else should look away.</p><button class="primary" data-action="show-board">I am ${player.name}</button></section>`;
+  return `
+    <section class="panel pass">
+      <p class="kicker">Private investigation</p>
+      <h1>Pass the device to ${escapeHtml(player.name)}</h1>
+      <p>Everyone else should look away before the suspect board is revealed.</p>
+      <button class="primary" data-action="show-board">I am ${escapeHtml(player.name)}</button>
+    </section>`;
 }
 
 function renderBoard() {
   const player = state.players[state.activePlayer];
+  const blocked = player.id === state.jokerHolder;
   const target = Math.max(1, Math.ceil(player.remaining.length / 2));
-  const mustRemove = player.remaining.length - target;
-  const joker = player.id === state.jokerHolder;
-  return `<section class="panel"><p class="kicker">${ROOMS[state.roomIndex].name}</p><h1>${player.name}'s suspect board</h1>${joker?`<div class="notice"><strong>The Joker blocked your investigation.</strong><br>You cannot remove anyone this room.</div>`:`<div class="notice">Remove exactly <strong>${mustRemove}</strong> suspect${mustRemove===1?'':'s'}, leaving ${target}.</div>`}<div id="board" class="board">${CHARACTERS.map(c=>{const active=player.remaining.includes(c.id);return `<button class="suspect ${active?'':'removed'}" ${!active||joker?'disabled':''} data-id="${c.id}"><img src="../poison/${c.image}" alt=""><strong>${c.name}</strong></button>`}).join('')}</div><button class="primary" data-action="save-board" ${joker?'':'disabled'}>${joker?'Hide board and pass on':'Confirm eliminations'}</button></section>`;
+  const required = player.remaining.length - target;
+  const room = ROOMS[state.roomIndex];
+
+  return `
+    <section class="panel">
+      <p class="kicker">${room.name}</p>
+      <h1>${escapeHtml(player.name)}'s suspect board</h1>
+      ${blocked
+        ? `<div class="notice danger"><strong>The Joker blocked your investigation.</strong><p>You receive no clue and cannot eliminate a suspect in this room.</p></div>`
+        : `<div class="notice"><strong>Your clue</strong><p>${room.clue}</p><p>Eliminate exactly <strong>${required}</strong> suspect${required === 1 ? "" : "s"}, leaving ${target}.</p></div>`}
+      <div class="progress" aria-label="${player.remaining.length} suspects currently remain">
+        <span style="width:${(player.remaining.length / CHARACTERS.length) * 100}%"></span>
+      </div>
+      <div class="board">
+        ${CHARACTERS.map(character => renderSuspect(character, player, blocked)).join("")}
+      </div>
+      <p id="selection-status" class="selection-status">${blocked ? "No eliminations allowed." : `${required} eliminations required.`}</p>
+      <button class="primary" data-action="save-board" ${blocked ? "" : "disabled"}>
+        ${blocked ? "Hide board and pass on" : "Confirm eliminations"}
+      </button>
+    </section>`;
 }
 
-function renderRoundSummary() {
-  return `<section class="panel"><p class="kicker">Investigation update</p><h1>${ROOMS[state.roomIndex].name} searched</h1><div class="players">${state.players.map(p=>`<article class="player-card ${p.remaining.length===1?'winner':''}"><strong>${p.name}</strong><br>${p.remaining.length} suspect${p.remaining.length===1?'':'s'} remain${p.id===state.jokerHolder?'<br><small>Held the Joker</small>':''}</article>`).join('')}</div><button class="primary" data-action="continue">${state.players.some(p=>p.remaining.length===1)?'Resolve the investigation':'Move to the next room'}</button></section>`;
+function renderSuspect(character, player, blocked) {
+  const active = player.remaining.includes(character.id);
+  const selected = state.selected.has(character.id);
+  return `
+    <button class="suspect ${active ? "" : "removed"} ${selected ? "selected" : ""}"
+      ${!active || blocked ? "disabled" : ""}
+      data-id="${character.id}"
+      aria-pressed="${selected}">
+      <img src="../poison/${character.image}" alt="">
+      <strong>${escapeHtml(character.name)}</strong>
+      <span>${active ? "Still suspected" : "Eliminated"}</span>
+    </button>`;
 }
 
-function renderWinner() {
-  const winner = state.winners[0];
-  const suspect = CHARACTERS.find(c=>c.id===winner.remaining[0]);
-  return `<section class="panel hero"><p class="kicker">Case closed</p><h1>${winner.name} solves the mystery</h1><img class="room-art" src="../poison/${suspect.image}" alt="Portrait of ${suspect.name}"><h2>${suspect.name}</h2><p>After searching ${state.roomIndex + 1} room${state.roomIndex===0?'':'s'}, ${winner.name} is the first detective left with a single suspect.</p><button class="primary" data-action="restart">Play again</button></section>`;
+function renderSummary() {
+  const room = ROOMS[state.roomIndex];
+  const finalRoom = state.roomIndex === ROOMS.length - 1;
+  return `
+    <section class="panel">
+      <p class="kicker">Investigation update</p>
+      <h1>${room.name} searched</h1>
+      <div class="players">
+        ${state.players.map(player => `
+          <article class="player-card ${player.remaining.length === 1 ? "winner" : ""}">
+            <strong>${escapeHtml(player.name)}</strong>
+            <span>${player.remaining.length} suspect${player.remaining.length === 1 ? "" : "s"} remain</span>
+            ${player.id === state.jokerHolder ? "<small>Held the Joker</small>" : "<small>Received the clue</small>"}
+          </article>`).join("")}
+      </div>
+      <button class="primary" data-action="continue">${finalRoom ? "Make final accusations" : "Move to the next room"}</button>
+    </section>`;
+}
+
+function renderFinalPass() {
+  const player = state.players[state.activePlayer];
+  return `
+    <section class="panel pass">
+      <p class="kicker">Final accusation</p>
+      <h1>Pass the device to ${escapeHtml(player.name)}</h1>
+      <p>${player.remaining.length === 1 ? "Your investigation has produced one final suspect." : "Choose one suspect from those still on your board."}</p>
+      <button class="primary" data-action="show-final">I am ${escapeHtml(player.name)}</button>
+    </section>`;
+}
+
+function renderFinalChoice() {
+  const player = state.players[state.activePlayer];
+  const candidates = CHARACTERS.filter(character => player.remaining.includes(character.id));
+  return `
+    <section class="panel">
+      <p class="kicker">Final accusation</p>
+      <h1>Who is the murderer, ${escapeHtml(player.name)}?</h1>
+      <p>Your accusation is private until everyone has chosen.</p>
+      <div class="board final-board">
+        ${candidates.map(character => `
+          <button class="suspect" data-action="accuse" data-id="${character.id}">
+            <img src="../poison/${character.image}" alt="">
+            <strong>${escapeHtml(character.name)}</strong>
+            <span>Accuse</span>
+          </button>`).join("")}
+      </div>
+    </section>`;
 }
 
 function renderTieBreak() {
-  return `<section class="panel"><p class="kicker">Sudden-death tiebreak</p><h1>Deal the deck again</h1><p>${state.winners.map(p=>p.name).join(', ')} all reached one suspect together. Shuffle and deal the full deck. The first tied player to receive the Joker wins.</p><div class="players">${state.winners.map(p=>`<button class="player-card secondary" data-action="tie-winner" data-id="${p.id}"><strong>${p.name}</strong><br>I received the Joker first</button>`).join('')}</div></section>`;
+  return `
+    <section class="panel hero">
+      <p class="kicker">Sudden death</p>
+      <h1>The detectives agree</h1>
+      <p>${state.finalists.map(player => escapeHtml(player.name)).join(", ")} made the same winning accusation.</p>
+      <div class="notice"><strong>Deal the cards once more.</strong><p>The first tied detective to receive the Joker wins the case.</p></div>
+      <div class="players">
+        ${state.finalists.map(player => `
+          <button class="player-card secondary" data-action="tie-winner" data-id="${player.id}">
+            <strong>${escapeHtml(player.name)}</strong>
+            <span>I received the Joker first</span>
+          </button>`).join("")}
+      </div>
+    </section>`;
 }
 
-function bind() {
-  document.querySelector('[data-action="setup"]')?.addEventListener('click',()=>{state.phase='setup';render();});
-  document.getElementById('setup-form')?.addEventListener('submit',startGame);
-  document.querySelector('[data-action="finish-room"]')?.addEventListener('click',()=>{state.phase='holder';render();});
-  document.querySelectorAll('[data-action="holder"]').forEach(b=>b.addEventListener('click',()=>selectHolder(Number(b.dataset.id))));
-  document.querySelector('[data-action="show-board"]')?.addEventListener('click',()=>{state.phase='board';render();});
-  document.querySelectorAll('.suspect:not([disabled])').forEach(b=>b.addEventListener('click',toggleSuspect));
-  document.querySelector('[data-action="save-board"]')?.addEventListener('click',saveBoard);
-  document.querySelector('[data-action="continue"]')?.addEventListener('click',continueGame);
-  document.querySelectorAll('[data-action="tie-winner"]').forEach(b=>b.addEventListener('click',()=>finishTie(Number(b.dataset.id))));
-  document.querySelector('[data-action="restart"]')?.addEventListener('click',()=>location.reload());
+function renderWinner() {
+  const suspect = CHARACTERS.find(character => character.id === state.winner.accusation);
+  return `
+    <section class="panel hero">
+      <p class="kicker">Case closed</p>
+      <h1>${escapeHtml(state.winner.name)} wins</h1>
+      <img class="culprit" src="../poison/${suspect.image}" alt="Portrait of ${escapeHtml(suspect.name)}">
+      <h2>${escapeHtml(suspect.name)}</h2>
+      <p>${escapeHtml(state.winner.name)} survived four rooms of clues and named the final suspect.</p>
+      <button class="primary" data-action="restart">Play again</button>
+    </section>`;
+}
+
+function bindEvents() {
+  document.querySelector('[data-action="setup"]')?.addEventListener("click", () => changePhase("setup"));
+  document.getElementById("setup-form")?.addEventListener("submit", startGame);
+  document.querySelector('[data-action="finish-room"]')?.addEventListener("click", () => changePhase("holder"));
+  document.querySelectorAll('[data-action="holder"]').forEach(button => button.addEventListener("click", () => selectHolder(Number(button.dataset.id))));
+  document.querySelector('[data-action="show-board"]')?.addEventListener("click", () => changePhase("board"));
+  document.querySelectorAll(".suspect:not([disabled])").forEach(button => {
+    if (!button.dataset.action) button.addEventListener("click", toggleSuspect);
+  });
+  document.querySelector('[data-action="save-board"]')?.addEventListener("click", saveBoard);
+  document.querySelector('[data-action="continue"]')?.addEventListener("click", continueGame);
+  document.querySelector('[data-action="show-final"]')?.addEventListener("click", () => changePhase("finalChoice"));
+  document.querySelectorAll('[data-action="accuse"]').forEach(button => button.addEventListener("click", () => saveAccusation(button.dataset.id)));
+  document.querySelectorAll('[data-action="tie-winner"]').forEach(button => button.addEventListener("click", () => finishTie(Number(button.dataset.id))));
+  document.querySelector('[data-action="restart"]')?.addEventListener("click", resetGame);
 }
 
 function startGame(event) {
   event.preventDefault();
-  const data = new FormData(event.currentTarget);
-  state.players = [1,2,3,4].map(n=>({id:n,name:data.get(`player${n}`).trim(),remaining:CHARACTERS.map(c=>c.id),selected:new Set()}));
-  state.phase='room';
-  render();
+  const form = new FormData(event.currentTarget);
+  state.players = [1, 2, 3, 4].map(id => ({
+    id,
+    name: String(form.get(`player${id}`)).trim() || `Player ${id}`,
+    remaining: CHARACTERS.map(character => character.id),
+    accusation: null
+  }));
+  state.roomIndex = 0;
+  changePhase("room");
 }
 
 function selectHolder(id) {
-  state.jokerHolder=id;
-  state.activePlayer=0;
-  state.players.forEach(p=>p.selected=new Set());
-  state.phase='boardPass';
-  render();
+  state.jokerHolder = id;
+  state.activePlayer = 0;
+  state.selected = new Set();
+  changePhase("pass");
 }
 
 function toggleSuspect(event) {
-  const player=state.players[state.activePlayer];
-  const id=event.currentTarget.dataset.id;
-  const target=Math.max(1,Math.ceil(player.remaining.length/2));
-  const mustRemove=player.remaining.length-target;
-  if(player.selected.has(id)) player.selected.delete(id);
-  else if(player.selected.size<mustRemove) player.selected.add(id);
-  event.currentTarget.classList.toggle('removed');
-  const save=document.querySelector('[data-action="save-board"]');
-  save.disabled=player.selected.size!==mustRemove;
+  const player = state.players[state.activePlayer];
+  const id = event.currentTarget.dataset.id;
+  const target = Math.max(1, Math.ceil(player.remaining.length / 2));
+  const required = player.remaining.length - target;
+
+  if (state.selected.has(id)) state.selected.delete(id);
+  else if (state.selected.size < required) state.selected.add(id);
+
+  render();
 }
 
 function saveBoard() {
-  const player=state.players[state.activePlayer];
-  if(player.id!==state.jokerHolder) player.remaining=player.remaining.filter(id=>!player.selected.has(id));
-  state.activePlayer+=1;
-  state.phase=state.activePlayer<state.players.length?'boardPass':'roundSummary';
-  render();
+  const player = state.players[state.activePlayer];
+  const blocked = player.id === state.jokerHolder;
+  const target = Math.max(1, Math.ceil(player.remaining.length / 2));
+  const required = player.remaining.length - target;
+
+  if (!blocked && state.selected.size !== required) return;
+  if (!blocked) player.remaining = player.remaining.filter(id => !state.selected.has(id));
+
+  state.activePlayer += 1;
+  state.selected = new Set();
+  changePhase(state.activePlayer < state.players.length ? "pass" : "summary");
 }
 
 function continueGame() {
-  state.winners=state.players.filter(p=>p.remaining.length===1);
-  if(state.winners.length===1){state.phase='winner';render();return;}
-  if(state.winners.length>1){state.phase='tieBreak';render();return;}
-  state.roomIndex=Math.min(state.roomIndex+1,ROOMS.length-1);
-  state.phase='room';
+  if (state.roomIndex < ROOMS.length - 1) {
+    state.roomIndex += 1;
+    state.jokerHolder = null;
+    changePhase("room");
+    return;
+  }
+
+  state.activePlayer = 0;
+  changePhase("finalPass");
+}
+
+function saveAccusation(characterId) {
+  state.players[state.activePlayer].accusation = characterId;
+  state.activePlayer += 1;
+
+  if (state.activePlayer < state.players.length) {
+    changePhase("finalPass");
+    return;
+  }
+
+  resolveWinner();
+}
+
+function resolveWinner() {
+  const groups = new Map();
+  state.players.forEach(player => {
+    const key = player.accusation;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(player);
+  });
+
+  const ranked = [...groups.values()].sort((a, b) => b.length - a.length);
+  state.finalists = ranked[0];
+
+  if (state.finalists.length === 1) {
+    state.winner = state.finalists[0];
+    changePhase("winner");
+  } else {
+    changePhase("tieBreak");
+  }
+}
+
+function finishTie(playerId) {
+  state.winner = state.finalists.find(player => player.id === playerId);
+  changePhase("winner");
+}
+
+function resetGame() {
+  state.phase = "welcome";
+  state.players = [];
+  state.roomIndex = 0;
+  state.activePlayer = 0;
+  state.jokerHolder = null;
+  state.selected = new Set();
+  state.finalists = [];
+  state.winner = null;
   render();
 }
 
-function finishTie(id) {
-  state.winners=[state.winners.find(p=>p.id===id)];
-  state.phase='winner';
+function changePhase(phase) {
+  state.phase = phase;
   render();
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 render();
