@@ -7,10 +7,10 @@ const ROOMS = window.HIGH_STAKES_ROOMS;
 const state = {
   phase: "welcome",
   players: [],
+  murdererId: null,
   roomIndex: 0,
   activePlayer: 0,
   jokerHolder: null,
-  selected: new Set(),
   finalists: [],
   winner: null
 };
@@ -46,9 +46,10 @@ function renderWelcome() {
         <p>Use one standard deck plus one Joker. Remove one ordinary card so every non-Joker card can form a pair.</p>
       </div>
       <ol class="rules">
+        <li>The app secretly chooses the murderer at the beginning.</li>
         <li>Play one physical Old Maid round in each room.</li>
         <li>The player left holding the Joker receives no clue.</li>
-        <li>Everyone else eliminates half of their remaining suspects.</li>
+        <li>Everyone else has 50% of their innocent remaining guests removed automatically.</li>
         <li>After four rooms, each detective makes a final accusation.</li>
       </ol>
       <button class="primary" data-action="setup">Enter the Roundhouse</button>
@@ -116,8 +117,7 @@ function renderPass() {
 function renderBoard() {
   const player = state.players[state.activePlayer];
   const blocked = player.id === state.jokerHolder;
-  const target = Math.max(1, Math.ceil(player.remaining.length / 2));
-  const required = player.remaining.length - target;
+  const removedThisRound = blocked ? [] : eliminateHalfOfInnocents(player);
   const room = ROOMS[state.roomIndex];
 
   return `
@@ -125,33 +125,26 @@ function renderBoard() {
       <p class="kicker">${room.name}</p>
       <h1>${escapeHtml(player.name)}'s suspect board</h1>
       ${blocked
-        ? `<div class="notice danger"><strong>The Joker blocked your investigation.</strong><p>You receive no clue and cannot eliminate a suspect in this room.</p></div>`
-        : `<div class="notice"><strong>Your clue</strong><p>${room.clue}</p><p>Eliminate exactly <strong>${required}</strong> suspect${required === 1 ? "" : "s"}, leaving ${target}.</p></div>`}
+        ? `<div class="notice danger"><strong>The Joker blocked your investigation.</strong><p>You receive no clue and no suspects are removed in this room.</p></div>`
+        : `<div class="notice"><strong>Your clue</strong><p>${room.clue}</p><p><strong>${removedThisRound.length}</strong> innocent guest${removedThisRound.length === 1 ? " has" : "s have"} been removed. The murderer remains on your board.</p></div>`}
       <div class="progress" aria-label="${player.remaining.length} suspects currently remain">
         <span style="width:${(player.remaining.length / CHARACTERS.length) * 100}%"></span>
       </div>
       <div class="board">
-        ${CHARACTERS.map(character => renderSuspect(character, player, blocked)).join("")}
+        ${CHARACTERS.map(character => renderSuspect(character, player)).join("")}
       </div>
-      <p id="selection-status" class="selection-status">${blocked ? "No eliminations allowed." : `${required} eliminations required.`}</p>
-      <button class="primary" data-action="save-board" ${blocked ? "" : "disabled"}>
-        ${blocked ? "Hide board and pass on" : "Confirm eliminations"}
-      </button>
+      <button class="primary" data-action="save-board">Hide board and pass on</button>
     </section>`;
 }
 
-function renderSuspect(character, player, blocked) {
+function renderSuspect(character, player) {
   const active = player.remaining.includes(character.id);
-  const selected = state.selected.has(character.id);
   return `
-    <button class="suspect ${active ? "" : "removed"} ${selected ? "selected" : ""}"
-      ${!active || blocked ? "disabled" : ""}
-      data-id="${character.id}"
-      aria-pressed="${selected}">
+    <article class="suspect ${active ? "" : "removed"}">
       <img src="../poison/${character.image}" alt="">
       <strong>${escapeHtml(character.name)}</strong>
       <span>${active ? "Still suspected" : "Eliminated"}</span>
-    </button>`;
+    </article>`;
 }
 
 function renderSummary() {
@@ -207,8 +200,8 @@ function renderTieBreak() {
   return `
     <section class="panel hero">
       <p class="kicker">Sudden death</p>
-      <h1>The detectives agree</h1>
-      <p>${state.finalists.map(player => escapeHtml(player.name)).join(", ")} made the same winning accusation.</p>
+      <h1>Several detectives solved the case</h1>
+      <p>${state.finalists.map(player => escapeHtml(player.name)).join(", ")} all accused the real murderer.</p>
       <div class="notice"><strong>Deal the cards once more.</strong><p>The first tied detective to receive the Joker wins the case.</p></div>
       <div class="players">
         ${state.finalists.map(player => `
@@ -221,14 +214,14 @@ function renderTieBreak() {
 }
 
 function renderWinner() {
-  const suspect = CHARACTERS.find(character => character.id === state.winner.accusation);
+  const murderer = CHARACTERS.find(character => character.id === state.murdererId);
   return `
     <section class="panel hero">
       <p class="kicker">Case closed</p>
       <h1>${escapeHtml(state.winner.name)} wins</h1>
-      <img class="culprit" src="../poison/${suspect.image}" alt="Portrait of ${escapeHtml(suspect.name)}">
-      <h2>${escapeHtml(suspect.name)}</h2>
-      <p>${escapeHtml(state.winner.name)} survived four rooms of clues and named the final suspect.</p>
+      <img class="culprit" src="../poison/${murderer.image}" alt="Portrait of ${escapeHtml(murderer.name)}">
+      <h2>${escapeHtml(murderer.name)}</h2>
+      <p>${escapeHtml(state.winner.name)} correctly identified the murderer.</p>
       <button class="primary" data-action="restart">Play again</button>
     </section>`;
 }
@@ -239,9 +232,6 @@ function bindEvents() {
   document.querySelector('[data-action="finish-room"]')?.addEventListener("click", () => changePhase("holder"));
   document.querySelectorAll('[data-action="holder"]').forEach(button => button.addEventListener("click", () => selectHolder(Number(button.dataset.id))));
   document.querySelector('[data-action="show-board"]')?.addEventListener("click", () => changePhase("board"));
-  document.querySelectorAll(".suspect:not([disabled])").forEach(button => {
-    if (!button.dataset.action) button.addEventListener("click", toggleSuspect);
-  });
   document.querySelector('[data-action="save-board"]')?.addEventListener("click", saveBoard);
   document.querySelector('[data-action="continue"]')?.addEventListener("click", continueGame);
   document.querySelector('[data-action="show-final"]')?.addEventListener("click", () => changePhase("finalChoice"));
@@ -253,11 +243,13 @@ function bindEvents() {
 function startGame(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
+  state.murdererId = CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)].id;
   state.players = [1, 2, 3, 4].map(id => ({
     id,
     name: String(form.get(`player${id}`)).trim() || `Player ${id}`,
     remaining: CHARACTERS.map(character => character.id),
-    accusation: null
+    accusation: null,
+    processedRoom: -1
   }));
   state.roomIndex = 0;
   changePhase("room");
@@ -266,33 +258,24 @@ function startGame(event) {
 function selectHolder(id) {
   state.jokerHolder = id;
   state.activePlayer = 0;
-  state.selected = new Set();
   changePhase("pass");
 }
 
-function toggleSuspect(event) {
-  const player = state.players[state.activePlayer];
-  const id = event.currentTarget.dataset.id;
-  const target = Math.max(1, Math.ceil(player.remaining.length / 2));
-  const required = player.remaining.length - target;
+function eliminateHalfOfInnocents(player) {
+  if (player.processedRoom === state.roomIndex) return [];
 
-  if (state.selected.has(id)) state.selected.delete(id);
-  else if (state.selected.size < required) state.selected.add(id);
-
-  render();
+  const innocentIds = player.remaining.filter(id => id !== state.murdererId);
+  const removeCount = Math.floor(innocentIds.length / 2);
+  const shuffled = [...innocentIds].sort(() => Math.random() - 0.5);
+  const removed = shuffled.slice(0, removeCount);
+  player.remaining = player.remaining.filter(id => !removed.includes(id));
+  player.processedRoom = state.roomIndex;
+  return removed;
 }
 
 function saveBoard() {
-  const player = state.players[state.activePlayer];
-  const blocked = player.id === state.jokerHolder;
-  const target = Math.max(1, Math.ceil(player.remaining.length / 2));
-  const required = player.remaining.length - target;
-
-  if (!blocked && state.selected.size !== required) return;
-  if (!blocked) player.remaining = player.remaining.filter(id => !state.selected.has(id));
-
+  state.players[state.activePlayer].processedRoom = state.roomIndex;
   state.activePlayer += 1;
-  state.selected = new Set();
   changePhase(state.activePlayer < state.players.length ? "pass" : "summary");
 }
 
@@ -321,22 +304,21 @@ function saveAccusation(characterId) {
 }
 
 function resolveWinner() {
-  const groups = new Map();
-  state.players.forEach(player => {
-    const key = player.accusation;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(player);
-  });
-
-  const ranked = [...groups.values()].sort((a, b) => b.length - a.length);
-  state.finalists = ranked[0];
+  state.finalists = state.players.filter(player => player.accusation === state.murdererId);
 
   if (state.finalists.length === 1) {
     state.winner = state.finalists[0];
     changePhase("winner");
-  } else {
-    changePhase("tieBreak");
+    return;
   }
+
+  if (state.finalists.length > 1) {
+    changePhase("tieBreak");
+    return;
+  }
+
+  state.winner = state.players[Math.floor(Math.random() * state.players.length)];
+  changePhase("winner");
 }
 
 function finishTie(playerId) {
@@ -347,10 +329,10 @@ function finishTie(playerId) {
 function resetGame() {
   state.phase = "welcome";
   state.players = [];
+  state.murdererId = null;
   state.roomIndex = 0;
   state.activePlayer = 0;
   state.jokerHolder = null;
-  state.selected = new Set();
   state.finalists = [];
   state.winner = null;
   render();
