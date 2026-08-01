@@ -12,7 +12,9 @@ const state = {
   activePlayer: 0,
   jokerHolder: null,
   finalists: [],
-  winner: null
+  winners: [],
+  accusationRound: 1,
+  clearedThisRound: []
 };
 
 function render() {
@@ -26,8 +28,8 @@ function render() {
     summary: renderSummary,
     finalPass: renderFinalPass,
     finalChoice: renderFinalChoice,
-    winner: renderWinner,
-    tieBreak: renderTieBreak
+    accusationResult: renderAccusationResult,
+    winner: renderWinner
   };
 
   app.innerHTML = views[state.phase]();
@@ -50,7 +52,8 @@ function renderWelcome() {
         <li>Play one physical Old Maid round in each room.</li>
         <li>The player left holding the Joker receives no clue.</li>
         <li>For everyone else, the app automatically excludes 50% of the remaining innocent guests.</li>
-        <li>After four rooms, each detective makes a final accusation.</li>
+        <li>After four rooms, everyone makes private accusations.</li>
+        <li>If every accusation is wrong, those suspects are cleared and another accusation round begins.</li>
       </ol>
       <button class="primary" data-action="setup">Enter the Roundhouse</button>
     </section>`;
@@ -173,9 +176,9 @@ function renderFinalPass() {
   const player = state.players[state.activePlayer];
   return `
     <section class="panel pass">
-      <p class="kicker">Final accusation</p>
+      <p class="kicker">Accusation round ${state.accusationRound}</p>
       <h1>Pass the device to ${escapeHtml(player.name)}</h1>
-      <p>${player.remaining.length === 1 ? "Your investigation has produced one final suspect." : "Choose one suspect from those still on your board."}</p>
+      <p>${player.remaining.length === 1 ? "Only one suspect remains on your board." : "Choose one suspect from those still on your board."}</p>
       <button class="primary" data-action="show-final">I am ${escapeHtml(player.name)}</button>
     </section>`;
 }
@@ -185,7 +188,7 @@ function renderFinalChoice() {
   const candidates = CHARACTERS.filter(character => player.remaining.includes(character.id));
   return `
     <section class="panel">
-      <p class="kicker">Final accusation</p>
+      <p class="kicker">Accusation round ${state.accusationRound}</p>
       <h1>Who is the murderer, ${escapeHtml(player.name)}?</h1>
       <p>Your accusation is private until everyone has chosen.</p>
       <div class="board final-board">
@@ -201,34 +204,37 @@ function renderFinalChoice() {
     </section>`;
 }
 
-function renderTieBreak() {
+function renderAccusationResult() {
+  const clearedCharacters = state.clearedThisRound
+    .map(id => CHARACTERS.find(character => character.id === id))
+    .filter(Boolean);
+
   return `
     <section class="panel hero">
-      <p class="kicker">Sudden death</p>
-      <h1>Several detectives solved the case</h1>
-      <p>${state.finalists.map(player => escapeHtml(player.name)).join(", ")} all accused the real murderer.</p>
-      <div class="notice"><strong>Deal the cards once more.</strong><p>The first tied detective to receive the Joker wins the case.</p></div>
-      <div class="players">
-        ${state.finalists.map(player => `
-          <button class="player-card secondary" data-action="tie-winner" data-id="${player.id}">
-            <strong>${escapeHtml(player.name)}</strong>
-            <span>I received the Joker first</span>
-          </button>`).join("")}
+      <p class="kicker">The accusations were wrong</p>
+      <h1>The investigation continues</h1>
+      <div class="notice danger">
+        <strong>No detective identified the murderer.</strong>
+        <p>The police have cleared ${clearedCharacters.map(character => escapeHtml(character.name)).join(", ")}.</p>
       </div>
+      <p>Those suspects have been removed from every detective's board. Pass the device around for another private accusation.</p>
+      <button class="primary" data-action="next-accusation">Begin accusation round ${state.accusationRound}</button>
     </section>`;
 }
 
 function renderWinner() {
   const murderer = CHARACTERS.find(character => character.id === state.murdererId);
+  const names = state.winners.map(player => escapeHtml(player.name));
+  const winnerText = names.length === 1 ? names[0] : names.join(", ");
   return `
     <section class="panel hero">
       <p class="kicker">Case closed</p>
-      <h1>${escapeHtml(state.winner.name)} wins</h1>
+      <h1>${winnerText} ${state.winners.length === 1 ? "wins" : "win"}</h1>
       <div class="culprit-frame">
         <img class="culprit" src="../poison/${murderer.image}" alt="Portrait of ${escapeHtml(murderer.name)}">
       </div>
       <h2>${escapeHtml(murderer.name)}</h2>
-      <p>${escapeHtml(state.winner.name)} correctly identified the murderer.</p>
+      <p>${winnerText} correctly identified the murderer in accusation round ${state.accusationRound}.</p>
       <button class="primary" data-action="restart">Play again</button>
     </section>`;
 }
@@ -243,7 +249,7 @@ function bindEvents() {
   document.querySelector('[data-action="continue"]')?.addEventListener("click", continueGame);
   document.querySelector('[data-action="show-final"]')?.addEventListener("click", () => changePhase("finalChoice"));
   document.querySelectorAll('[data-action="accuse"]').forEach(button => button.addEventListener("click", () => saveAccusation(button.dataset.id)));
-  document.querySelectorAll('[data-action="tie-winner"]').forEach(button => button.addEventListener("click", () => finishTie(Number(button.dataset.id))));
+  document.querySelector('[data-action="next-accusation"]')?.addEventListener("click", beginNextAccusationRound);
   document.querySelector('[data-action="restart"]')?.addEventListener("click", resetGame);
 }
 
@@ -259,6 +265,9 @@ function startGame(event) {
     processedRoom: -1
   }));
   state.roomIndex = 0;
+  state.accusationRound = 1;
+  state.clearedThisRound = [];
+  state.winners = [];
   changePhase("room");
 }
 
@@ -305,6 +314,7 @@ function continueGame() {
   }
 
   state.activePlayer = 0;
+  state.players.forEach(player => { player.accusation = null; });
   changePhase("finalPass");
 }
 
@@ -317,30 +327,32 @@ function saveAccusation(characterId) {
     return;
   }
 
-  resolveWinner();
+  resolveAccusations();
 }
 
-function resolveWinner() {
-  state.finalists = state.players.filter(player => player.accusation === state.murdererId);
+function resolveAccusations() {
+  state.winners = state.players.filter(player => player.accusation === state.murdererId);
 
-  if (state.finalists.length === 1) {
-    state.winner = state.finalists[0];
+  if (state.winners.length > 0) {
     changePhase("winner");
     return;
   }
 
-  if (state.finalists.length > 1) {
-    changePhase("tieBreak");
-    return;
-  }
+  state.clearedThisRound = [...new Set(state.players.map(player => player.accusation))]
+    .filter(id => id && id !== state.murdererId);
 
-  state.winner = state.players[Math.floor(Math.random() * state.players.length)];
-  changePhase("winner");
+  state.players.forEach(player => {
+    player.remaining = player.remaining.filter(id => !state.clearedThisRound.includes(id));
+    player.accusation = null;
+  });
+
+  state.accusationRound += 1;
+  changePhase("accusationResult");
 }
 
-function finishTie(playerId) {
-  state.winner = state.finalists.find(player => player.id === playerId);
-  changePhase("winner");
+function beginNextAccusationRound() {
+  state.activePlayer = 0;
+  changePhase("finalPass");
 }
 
 function resetGame() {
@@ -351,7 +363,9 @@ function resetGame() {
   state.activePlayer = 0;
   state.jokerHolder = null;
   state.finalists = [];
-  state.winner = null;
+  state.winners = [];
+  state.accusationRound = 1;
+  state.clearedThisRound = [];
   render();
 }
 
