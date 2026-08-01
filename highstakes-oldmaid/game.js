@@ -3,6 +3,7 @@
 const app = document.getElementById("game");
 const CHARACTERS = window.ROUNDHOUSE_CHARACTERS.slice(0, 16);
 const ROOMS = window.HIGH_STAKES_ROOMS;
+const PLAYER_NAMES_STORAGE_KEY = "highstakes.playerNames.v1";
 
 const state = {
   phase: "welcome",
@@ -62,6 +63,7 @@ function renderWelcome() {
 }
 
 function renderSetup() {
+  const savedNames = loadPlayerNames();
   return `
     <section class="panel">
       <p class="kicker">Detective register</p>
@@ -69,7 +71,7 @@ function renderSetup() {
       <form id="setup-form" class="form-grid">
         ${[1, 2, 3, 4].map(number => `
           <label>Player ${number}
-            <input name="player${number}" maxlength="24" required value="Player ${number}">
+            <input name="player${number}" maxlength="24" required value="${escapeHtml(savedNames[number - 1])}">
           </label>`).join("")}
         <button class="primary" type="submit">Begin the investigation</button>
       </form>
@@ -274,10 +276,13 @@ function bindEvents() {
 function startGame(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
+  const playerNames = [1, 2, 3, 4].map(id => String(form.get(`player${id}`)).trim() || `Player ${id}`);
+  savePlayerNames(playerNames);
+
   state.murdererId = CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)].id;
-  state.players = [1, 2, 3, 4].map(id => ({
-    id,
-    name: String(form.get(`player${id}`)).trim() || `Player ${id}`,
+  state.players = playerNames.map((name, index) => ({
+    id: index + 1,
+    name,
     remaining: CHARACTERS.map(character => character.id),
     accusation: null,
     processedRoom: -1
@@ -288,6 +293,28 @@ function startGame(event) {
   state.finalists = [];
   state.winner = null;
   changePhase("room");
+}
+
+function loadPlayerNames() {
+  const defaults = ["Player 1", "Player 2", "Player 3", "Player 4"];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PLAYER_NAMES_STORAGE_KEY));
+    if (!Array.isArray(parsed) || parsed.length !== 4) return defaults;
+    return parsed.map((name, index) => {
+      const value = typeof name === "string" ? name.trim().slice(0, 24) : "";
+      return value || defaults[index];
+    });
+  } catch {
+    return defaults;
+  }
+}
+
+function savePlayerNames(names) {
+  try {
+    localStorage.setItem(PLAYER_NAMES_STORAGE_KEY, JSON.stringify(names));
+  } catch {
+    // The game still works if storage is blocked or unavailable.
+  }
 }
 
 function selectHolder(id) {
