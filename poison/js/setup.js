@@ -1,12 +1,12 @@
 "use strict";
 
-const POISONER_EXCLUSION_HOLD_MS = 5000;
+const POISONER_EXCLUSION_DOUBLE_TAP_MS = 350;
 
 function renderSelection() {
   state.phase = "selection";
   const root = document.createDocumentFragment();
   root.append(titleBlock("A pass-and-play mystery for four", "Poison at the Roundhouse",
-    "Exactly four guests are required. Tap to select a character. Press and hold for five seconds to prevent that character from being assigned the Poisoner role."));
+    "Exactly four guests are required. Tap to select a character. Double-tap quickly to prevent that character from being assigned the Poisoner role."));
   const summary = el("div", "player-slots");
   for (let index = 0; index < PLAYER_COUNT; index += 1) {
     const character = byId(state.selectedIds[index]);
@@ -23,13 +23,13 @@ function renderSelection() {
     const excluded = state.poisonerExcludedIds.includes(character.id);
     const card = button("", () => selectCharacter(character.id), `character-card${selectedIndex >= 0 ? " selected" : ""}${excluded ? " poisoner-excluded" : ""}`);
     card.setAttribute("aria-pressed", String(selectedIndex >= 0));
-    card.setAttribute("aria-label", `${character.name}. ${character.profile}${excluded ? ". Cannot be the Poisoner." : ". Hold for five seconds to exclude from the Poisoner role."}`);
-    attachPoisonerExclusionHold(card, character.id);
+    card.setAttribute("aria-label", `${character.name}. ${character.profile}${excluded ? ". Cannot be the Poisoner." : ". Double-tap to exclude from the Poisoner role."}`);
+    attachPoisonerExclusionDoubleTap(card, character.id);
     card.append(safeImage(character.image, character.name), el("strong", "", character.name));
     if (excluded) card.append(el("small", "role-exclusion", "Will not be the Poisoner"));
     grid.append(card);
   });
-  root.append(grid, actions(
+  root.append(el("p", "status", "Tip: double-tap a character to toggle whether they can be the Poisoner."), grid, actions(
     button("Randomise characters", randomiseCharacters, "secondary"),
     button("Clear selections", () => { state.selectedIds = []; renderSelection(); }, "ghost"),
     button("Begin dinner", startGame)
@@ -37,38 +37,30 @@ function renderSelection() {
   setScreen(root);
 }
 
-function attachPoisonerExclusionHold(card, characterId) {
-  let timer = null;
-  let held = false;
-  const cancel = () => {
-    if (timer !== null) window.clearTimeout(timer);
-    timer = null;
-  };
-  const start = event => {
-    if (event.type === "mousedown" && event.button !== 0) return;
-    held = false;
-    card.classList.add("holding");
-    timer = window.setTimeout(() => {
-      held = true;
-      card.dataset.ignoreNextClick = "true";
-      togglePoisonerExclusion(characterId);
-    }, POISONER_EXCLUSION_HOLD_MS);
-  };
-  const finish = () => {
-    cancel();
-    card.classList.remove("holding");
-  };
-  card.addEventListener("pointerdown", start);
-  card.addEventListener("pointerup", finish);
-  card.addEventListener("pointercancel", finish);
-  card.addEventListener("pointerleave", finish);
+function attachPoisonerExclusionDoubleTap(card, characterId) {
+  let tapTimer = null;
+  let lastTapAt = 0;
+
   card.addEventListener("click", event => {
-    if (held || card.dataset.ignoreNextClick === "true") {
+    const now = Date.now();
+    const isDoubleTap = now - lastTapAt <= POISONER_EXCLUSION_DOUBLE_TAP_MS;
+    lastTapAt = now;
+
+    if (isDoubleTap) {
+      if (tapTimer !== null) window.clearTimeout(tapTimer);
+      tapTimer = null;
       event.preventDefault();
       event.stopImmediatePropagation();
-      delete card.dataset.ignoreNextClick;
-      held = false;
+      togglePoisonerExclusion(characterId);
+      return;
     }
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    tapTimer = window.setTimeout(() => {
+      tapTimer = null;
+      selectCharacter(characterId);
+    }, POISONER_EXCLUSION_DOUBLE_TAP_MS);
   }, true);
 }
 
