@@ -11,15 +11,6 @@ const COURSE_IMAGES = {
   "Dessert": "assets/courses/dessert.webp"
 };
 const ROLES = ["Poisoner", "Doctor", "Guest", "Guest"];
-const POISON_SUPPLY = { deadly: 2, slow: 2, blocker: 1 };
-const DINNER_EVENTS = [
-  { id: "power-cut", name: "Power Cut", text: "No serving swaps are offered during this course.", noSwaps: true },
-  { id: "champagne-toast", name: "Champagne Toast", text: "Every active guest's serving moves one place clockwise before private turns.", rotateMeals: true },
-  { id: "locked-doors", name: "Locked Doors", text: "The Poisoner must use a vial if any remain.", forcePoison: true },
-  { id: "police-visit", name: "Police Visit", text: "At discussion, each guest must publicly say whether they attempted a swap.", revealSwapClaims: true },
-  { id: "late-serving", name: "Late Serving", text: "Any poison used this course takes effect at the start of the next course.", delayedPoison: true },
-  { id: "quiet-service", name: "Quiet Service", text: "No special disruption occurs during this course." }
-];
 const debugMode = new URLSearchParams(location.search).get("debug") === "true";
 const gameRoot = document.querySelector("#game");
 const message = document.querySelector("#message");
@@ -31,7 +22,7 @@ function freshState(selectedIds = []) {
     phase: "selection", selectedIds: [...selectedIds], poisonerExcludedIds: [], players: [], roleRevealIndex: 0,
     courseIndex: 0, courses: [], current: null, actionQueue: [], actionIndex: 0,
     votes: {}, voteOrder: [], voteIndex: 0, pending: {}, transitionLocked: false,
-    immediatePoisonerWin: false, poisonSupply: { ...POISON_SUPPLY }, delayedPoison: null
+    immediatePoisonerWin: false
   };
 }
 
