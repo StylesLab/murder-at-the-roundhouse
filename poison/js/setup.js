@@ -124,9 +124,9 @@ function showPassScreen(player, purpose, callback) {
 function revealRole() {
   const player = state.players[state.roleRevealIndex];
   const descriptions = {
-    Poisoner: "You have two deadly poisons, two slow poisons, and one antidote blocker for the whole dinner. Choose carefully; swaps may move a poisoned serving before it is eaten.",
-    Doctor: "Each course, secretly protect one guest, including yourself. Your choice can prevent that guest from losing health unless an antidote blocker was used.",
-    Guest: "Observe, discuss, and identify the Poisoner. Each course you may receive a secret opportunity to swap servings."
+    Poisoner: "Each course, secretly poison one guest's serving—or choose no poison. Swaps may move it before it is eaten.",
+    Doctor: "Each course, secretly protect one guest, including yourself. Your choice can prevent that guest from losing health.",
+    Guest: "Observe, discuss, and identify the Poisoner. Each course you have a 50% chance of receiving a secret opportunity to swap servings."
   };
   const root = document.createDocumentFragment();
   root.append(titleBlock(player.name, `You are the ${player.role}`, descriptions[player.role]),
