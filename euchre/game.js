@@ -2,371 +2,69 @@
 
 const app = document.querySelector("#game");
 const toast = document.querySelector("#toast");
-const STORAGE_KEY = "roundhouse.euchre.progress.v1";
+const STORAGE_KEY = "roundhouse.euchre.progress.v2";
 const SUITS = ["♣", "♦", "♥", "♠"];
 const RED = new Set(["♦", "♥"]);
 const RANKS = ["9", "10", "J", "Q", "K", "A"];
-const FACE_PORTRAITS = {
-  J: ["01", "06", "13", "17"],
-  Q: ["03", "08", "14", "16"],
-  K: ["02", "04", "12", "18"]
-};
+const FACE_PORTRAITS = { J: ["01", "06", "13", "17"], Q: ["03", "08", "14", "16"], K: ["02", "04", "12", "18"] };
+const BENNY_PORTRAIT = "../poison/assets/portraits/12.png";
 const LEVELS = [
-  { id: 1, title: "Meet the Pack", subtitle: "Which cards do we use?", xp: 20, kind: "pack" },
-  { id: 2, title: "Trump Power", subtitle: "Why trump beats other suits", xp: 25, kind: "trump" },
-  { id: 3, title: "The Right Bower", subtitle: "The strongest ordinary card", xp: 30, kind: "right" },
-  { id: 4, title: "The Left Bower", subtitle: "The sneaky jack that changes suit", xp: 35, kind: "left" },
-  { id: 5, title: "Meet the Benny", subtitle: "The Joker rules them all", xp: 35, kind: "benny" },
-  { id: 6, title: "Follow Suit", subtitle: "Play legal cards", xp: 40, kind: "follow" },
-  { id: 7, title: "Win the Trick", subtitle: "Spot the strongest card", xp: 45, kind: "winner" },
-  { id: 8, title: "Save Your Trump", subtitle: "A first tactical choice", xp: 50, kind: "tactics" },
-  { id: 9, title: "Call It!", subtitle: "Choose a useful trump suit", xp: 55, kind: "call" },
-  { id: 10, title: "Mini Mission", subtitle: "Win two tricks from three", xp: 70, kind: "mini" },
-  { id: 11, title: "Roundhouse Table", subtitle: "Play a full five-trick hand", xp: 100, kind: "full" }
-];
+  ["Meet the Pack","Which cards do we use?",20,"pack"],["Trump Power","Why trump beats other suits",25,"trump"],["The Right Bower","The strongest ordinary card",30,"right"],["The Left Bower","The sneaky jack that changes suit",35,"left"],["Meet the Benny","The Joker rules them all",35,"benny"],["Follow Suit","Play legal cards",40,"follow"],["Win the Trick","Spot the strongest card",45,"winner"],["Save Your Trump","A first tactical choice",50,"tactics"],["Round One Bidding","Order up the turned card",55,"orderup"],["Dealer Picks Up","What ordering up changes",55,"dealerpick"],["Round Two Bidding","Call a different suit",60,"roundtwo"],["Going Alone","Drop your partner when your hand is huge",65,"alone"],["Scoring","Earn 1, 2 or 4 points",65,"scoring"],["Help Your Partner","Don't steal a trick unnecessarily",65,"partner"],["Lead for Your Partner","Set up your team",70,"partnerlead"],["Mini Mission","Make three smart team plays",80,"mini"],["Roundhouse Table","Play a full five-trick hand",120,"full"]
+].map((x,i)=>({id:i+1,title:x[0],subtitle:x[1],xp:x[2],kind:x[3]}));
 const ACHIEVEMENTS = [
-  { id: "first", icon: "★", title: "First Trick", text: "Complete your first lesson." },
-  { id: "bower", icon: "♛", title: "Bower Spotter", text: "Master both bowers." },
-  { id: "streak", icon: "⚡", title: "Hot Streak", text: "Answer three challenges correctly in a row." },
-  { id: "mini", icon: "♣", title: "Trick Taker", text: "Complete the Mini Mission." },
-  { id: "table", icon: "🏆", title: "Roundhouse Regular", text: "Complete a full AI hand." }
+  { id:"first",icon:"★",title:"First Trick",text:"Complete your first lesson." },{ id:"bower",icon:"♛",title:"Bower Spotter",text:"Master both bowers." },{ id:"bidder",icon:"📣",title:"Confident Caller",text:"Master both bidding rounds." },{ id:"team",icon:"🤝",title:"Perfect Partner",text:"Complete both partner-play lessons." },{ id:"streak",icon:"⚡",title:"Hot Streak",text:"Answer three challenges correctly in a row." },{ id:"mini",icon:"♣",title:"Trick Taker",text:"Complete the Mini Mission." },{ id:"table",icon:"🏆",title:"Roundhouse Regular",text:"Complete a full AI hand." }
 ];
-
-let progress = loadProgress();
-let screen = "home";
-let currentLevel = 1;
-let lessonState = {};
-let handState = null;
-
-function loadProgress() {
-  const fallback = { xp: 0, completed: [], stars: {}, achievements: [], streak: 0, bestStreak: 0 };
-  try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return value && typeof value === "object" ? { ...fallback, ...value } : fallback;
-  } catch { return fallback; }
+let progress=loadProgress(),screen="home",currentLevel=1,lessonState={},handState=null;
+function loadProgress(){const f={xp:0,completed:[],stars:{},achievements:[],streak:0,bestStreak:0};try{const v=JSON.parse(localStorage.getItem(STORAGE_KEY));return v&&typeof v==="object"?{...f,...v}:f;}catch{return f;}}
+function saveProgress(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(progress));}catch{}}
+function showToast(text){toast.textContent=text;toast.hidden=false;clearTimeout(showToast.timer);showToast.timer=setTimeout(()=>toast.hidden=true,2200);}
+function render(){if(screen==="home")renderHome();else if(screen==="level")renderLevel();else if(screen==="achievements")renderAchievements();else renderHand();app.focus({preventScroll:true});scrollTo(0,0);}
+function hud(){return `<section class="hud"><div><span>Level</span><strong>${Math.min(LEVELS.length,1+progress.completed.length)}</strong></div><div><span>XP</span><strong>${progress.xp}</strong></div><div><span>Lessons</span><strong>${progress.completed.length}/${LEVELS.length}</strong></div><div><span>Best streak</span><strong>${progress.bestStreak}</strong></div></section><div class="progress"><span style="width:${Math.min(100,progress.xp%100)}%"></span></div>`;}
+function renderHome(){const chars=window.ROUNDHOUSE_CHARACTERS.slice(0,4);app.innerHTML=`<p class="eyebrow">The Roundhouse Card Academy</p><h1>Euchre at the Roundhouse</h1><p class="lede">Learn Euchre in tiny missions: trump, bowers, the Benny, bidding, scoring and clever partner play.</p>${hud()}<div class="portrait-strip">${chars.map(c=>`<img src="../poison/${c.image}" alt="${c.name}">`).join("")}</div><div class="actions"><button data-action="continue">${progress.completed.length?"Continue academy":"Start learning"}</button><button class="secondary" data-action="achievements">Achievements</button></div><section class="level-grid">${LEVELS.map(levelCard).join("")}</section><p class="mini-rule">4 players in two partnerships. Cards 9 through Ace plus the Joker Benny. Benny, Right Bower, Left Bower, A, K, Q, 10, 9.</p>`;app.querySelector('[data-action="continue"]').onclick=()=>openLevel(Math.min(LEVELS.length,progress.completed.length+1));app.querySelector('[data-action="achievements"]').onclick=()=>{screen="achievements";render();};app.querySelectorAll("[data-level]").forEach(b=>b.onclick=()=>openLevel(+b.dataset.level));}
+function levelCard(l){const u=l.id<=progress.completed.length+1,c=progress.completed.includes(l.id),s=progress.stars[l.id]||0;return `<button class="level-card ${u?"unlocked":"locked"} ${c?"completed":""}" data-level="${l.id}" ${u?"":"disabled"}><span class="badge">Mission ${l.id}</span><h3>${l.title}</h3><p>${l.subtitle}</p><div class="stars">${c?"★".repeat(s)+"☆".repeat(3-s):u?"Ready":"Locked"}</div></button>`;}
+function openLevel(id){currentLevel=id;lessonState={attempts:0,correct:0,answered:false};if(LEVELS[id-1].kind==="full"){startFullHand();return;}screen="level";render();}
+function renderLevel(){const l=LEVELS[currentLevel-1];app.innerHTML=`<div class="lesson"><p class="eyebrow">Mission ${l.id} of ${LEVELS.length}</p><h1>${l.title}</h1><p class="lede">${l.subtitle}</p>${lessonContent(l.kind)}<div class="actions"><button class="ghost" data-home>Back to academy</button></div></div>`;app.querySelector("[data-home]").onclick=()=>{screen="home";render();};bindLesson(l.kind);}
+const C=(rank,suit,joker=false)=>({rank,suit,joker});
+function lessonContent(k){
+ if(k==="pack")return cardQuiz("Which cards belong in our Roundhouse Euchre pack?",[[C("2","♣")],[C("9","♣"),C("A","♠"),C("B","★",true)],[C("J","♥"),C("Q","♦"),C("K","♠")]],1,"We use 9, 10, J, Q, K and A in every suit, plus the Joker Benny: 25 cards.");
+ if(k==="trump")return cardQuiz("Hearts are trump. Which card wins?",[[C("A","♣")],[C("9","♥")],[C("K","♣")]],1,"Any trump beats any non-trump card.");
+ if(k==="right")return cardQuiz("Clubs are trump. Which ordinary card is strongest?",[[C("A","♣")],[C("J","♣")],[C("J","♠")]],1,"The Jack of trump is the Right Bower. Only the Benny beats it.");
+ if(k==="left")return cardQuiz("Hearts are trump. Which card is actually a Heart?",[[C("J","♦")],[C("A","♦")],[C("K","♥")]],0,"The same-colour Jack becomes the Left Bower and counts as trump.");
+ if(k==="benny")return cardQuiz("Which card beats the Right Bower?",[[C("A","♥")],[C("B","★",true)],[C("J","♦")]],1,"The Benny is the Joker and the highest trump card.");
+ if(k==="follow")return cardQuiz("Clubs were led. Which card must you play?",[[C("9","♣")],[C("A","♥")],[C("K","♠")]],0,"If you can follow suit, you must.");
+ if(k==="winner")return cardQuiz("Spades are trump. Which card wins?",[[C("A","♥")],[C("9","♠")],[C("A","♣")]],1,"Even the 9 of trump beats every off-suit Ace.");
+ if(k==="tactics")return cardQuiz("Your partner is already winning with A♣. What should you usually play?",[[C("J","♥")],[C("9","♣")]],1,"Follow cheaply and save strong trump when your partner already has the trick.");
+ if(k==="orderup")return choiceQuiz("Dealer turns up K♥. Your hand is J♥, J♦, A♥, 10♣, 9♠. First bidding round?",["Order it up: Hearts are trump","Pass","Call Clubs"],0,"Round one only lets you accept the turned-up suit. With both bowers and the Ace, order it up.");
+ if(k==="dealerpick")return choiceQuiz("You order up Hearts. What happens to the K♥?",["It stays in the kitty","Dealer picks it up and discards one card","You take it"],1,"Ordering up makes the dealer pick up the face-up card and discard one card.");
+ if(k==="roundtwo")return choiceQuiz("Everyone passes on the turned-up Hearts. What happens next?",["Second round: call Clubs, Diamonds or Spades","Hearts must still be trump","Redeal immediately"],0,"In round two, the turned suit is rejected and players may name a different suit as trump.");
+ if(k==="alone")return cardQuiz("You call Hearts. Which hand is strong enough to consider going alone?",[[C("B","★",true),C("J","♥"),C("J","♦"),C("A","♥"),C("K","♥")],[C("9","♣"),C("10","♦")]],0,"Going alone means your partner sits out. Take all five tricks alone for 4 points.");
+ if(k==="scoring")return choiceQuiz("Makers win 3 tricks; makers sweep 5; lone player sweeps 5; makers get euchred. Scores?",["1, 2, 4, defenders 2","2, 1, 4, defenders 1","1, 4, 2, defenders 2"],0,"Make the contract for 1; sweep for 2; lone sweep for 4. If makers take fewer than 3, defenders score 2: a euchre.");
+ if(k==="partner")return cardQuiz("Partner is winning with K♠ and Spades aren't trump. Which play helps most?",[[C("A","♠")],[C("9","♠")]],1,"Don't overtake your partner without a reason. Save the Ace.");
+ if(k==="partnerlead")return cardQuiz("Partner called Hearts. Which lead can help draw enemy trump?",[[C("9","♥")],[C("A","♣")],[C("K","♦")]],0,"Leading trump can help when your partner called it and likely has strength.");
+ if(k==="mini")return `<div class="lesson-box"><h2>Partner Challenge</h2><p>Make three good team decisions.</p><div id="mini-game"></div></div>`;return "";
 }
-
-function saveProgress() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(progress)); } catch { /* optional persistence */ }
-}
-
-function showToast(text) {
-  toast.textContent = text;
-  toast.hidden = false;
-  window.clearTimeout(showToast.timer);
-  showToast.timer = window.setTimeout(() => { toast.hidden = true; }, 2200);
-}
-
-function render() {
-  if (screen === "home") renderHome();
-  else if (screen === "level") renderLevel();
-  else if (screen === "achievements") renderAchievements();
-  else if (screen === "hand") renderHand();
-  app.focus({ preventScroll: true });
-  window.scrollTo(0, 0);
-}
-
-function levelNumber() {
-  return Math.min(LEVELS.length, 1 + progress.completed.length);
-}
-
-function hud() {
-  const nextXp = 100;
-  return `<section class="hud" aria-label="Player progress">
-    <div><span>Level</span><strong>${levelNumber()}</strong></div>
-    <div><span>XP</span><strong>${progress.xp}</strong></div>
-    <div><span>Lessons</span><strong>${progress.completed.length}/${LEVELS.length}</strong></div>
-    <div><span>Best streak</span><strong>${progress.bestStreak}</strong></div>
-  </section><div class="progress"><span style="width:${Math.min(100, progress.xp % nextXp)}%"></span></div>`;
-}
-
-function renderHome() {
-  const chars = window.ROUNDHOUSE_CHARACTERS.slice(0, 4);
-  app.innerHTML = `
-    <p class="eyebrow">The Roundhouse Card Academy</p>
-    <h1>Euchre at the Roundhouse</h1>
-    <p class="lede">Learn Euchre in tiny missions. Meet trump, the bowers and the mighty Benny, earn stars, unlock achievements, then sit down against three Roundhouse players.</p>
-    ${hud()}
-    <div class="portrait-strip">${chars.map(c => `<img src="../poison/${c.image}" alt="${c.name}">`).join("")}</div>
-    <div class="actions">
-      <button data-action="continue">${progress.completed.length ? "Continue academy" : "Start learning"}</button>
-      <button class="secondary" data-action="achievements">Achievements</button>
-    </div>
-    <section class="level-grid">${LEVELS.map(levelCard).join("")}</section>
-    <p class="mini-rule">Roundhouse rules: 4 players, cards 9 through Ace, the Joker is the Benny, and the jacks become the right and left bowers when trump is chosen.</p>`;
-  app.querySelector('[data-action="continue"]').onclick = () => openLevel(Math.min(LEVELS.length, progress.completed.length + 1));
-  app.querySelector('[data-action="achievements"]').onclick = () => { screen = "achievements"; render(); };
-  app.querySelectorAll("[data-level]").forEach(btn => btn.onclick = () => openLevel(Number(btn.dataset.level)));
-}
-
-function levelCard(level) {
-  const unlocked = level.id <= progress.completed.length + 1;
-  const complete = progress.completed.includes(level.id);
-  const stars = progress.stars[level.id] || 0;
-  return `<button class="level-card ${unlocked ? "unlocked" : "locked"} ${complete ? "completed" : ""}" data-level="${level.id}" ${unlocked ? "" : "disabled"}>
-    <span class="badge">Mission ${level.id}</span>
-    <h3>${level.title}</h3><p>${level.subtitle}</p>
-    <div class="stars">${complete ? "★".repeat(stars) + "☆".repeat(3 - stars) : unlocked ? "Ready" : "Locked"}</div>
-  </button>`;
-}
-
-function openLevel(id) {
-  currentLevel = id;
-  lessonState = { attempts: 0, correct: 0, answered: false };
-  if (LEVELS[id - 1].kind === "full") { startFullHand(); return; }
-  screen = "level";
-  render();
-}
-
-function renderLevel() {
-  const level = LEVELS[currentLevel - 1];
-  const content = lessonContent(level.kind);
-  app.innerHTML = `<div class="lesson"><p class="eyebrow">Mission ${level.id} of ${LEVELS.length}</p><h1>${level.title}</h1><p class="lede">${level.subtitle}</p>${content}<div class="actions"><button class="ghost" data-home>Back to academy</button></div></div>`;
-  app.querySelector("[data-home]").onclick = () => { screen = "home"; render(); };
-  bindLesson(level.kind);
-}
-
-function lessonContent(kind) {
-  const cards = {
-    nine: cardHtml({ rank: "9", suit: "♣" }),
-    ace: cardHtml({ rank: "A", suit: "♠" }),
-    jackH: cardHtml({ rank: "J", suit: "♥" }),
-    jackD: cardHtml({ rank: "J", suit: "♦" }),
-    joker: cardHtml({ rank: "B", suit: "★", joker: true })
-  };
-  if (kind === "pack") return quiz("Euchre uses a small, quick deck. Which cards belong in our Roundhouse pack?", ["2 through Ace", "9 through Ace plus the Joker", "Only picture cards"], 1, `<div class="card-row">${cards.nine}${cards.ace}${cards.joker}</div><p class="tip">That gives us 25 cards: six ranks in each suit, plus the Benny.</p>`);
-  if (kind === "trump") return quiz("Hearts are trump. Which card wins this little trick?", ["A♣", "9♥", "K♣"], 1, `<p class="tip">Any trump beats any non-trump card.</p>`);
-  if (kind === "right") return quiz("Clubs are trump. Which ordinary card is strongest?", ["A♣", "J♣", "J♠"], 1, `<div class="lesson-box"><strong>Right Bower:</strong> the Jack of the trump suit. It beats every card except the Benny.</div>`);
-  if (kind === "left") return quiz("Hearts are trump. What suit does J♦ count as?", ["Diamonds", "Hearts", "Either one"], 1, `<div class="card-row">${cards.jackH}${cards.jackD}</div><p class="tip">The Jack of the same-colour suit becomes the Left Bower and counts as trump.</p>`);
-  if (kind === "benny") return quiz("What beats the Right Bower in Roundhouse Euchre?", ["Ace of trump", "The Benny (Joker)", "Nothing"], 1, `<div class="card-row">${cards.joker}</div><p class="tip">Our Benny is the Joker and is the top trump card.</p>`);
-  if (kind === "follow") return quiz("Clubs were led. You hold 9♣, A♥ and K♠. Which card must you play?", ["9♣", "A♥", "K♠"], 0, `<p class="tip">If you can follow the led suit, you must. Remember: a Left Bower counts as trump, not its printed suit.</p>`);
-  if (kind === "winner") return quiz("Spades are trump. The trick is A♥, K♥, 9♠, A♣. Who wins?", ["A♥", "9♠", "A♣"], 1, `<p class="tip">The little 9♠ wins because trump beats every off-suit card.</p>`);
-  if (kind === "tactics") return quiz("Your partner is already winning with A♣. You have 9♣ and J♥, with Hearts trump. What is usually smarter?", ["Play J♥ trump", "Follow with 9♣ and save the trump", "Throw any card"], 1, `<p class="tip">Don't spend a powerful trump when your partner already has the trick.</p>`);
-  if (kind === "call") return quiz("Your hand has J♥, J♦, A♥, K♥, 9♣. Which trump call looks strongest?", ["Hearts", "Clubs", "Spades"], 0, `<p class="tip">Calling Hearts gives you the Right Bower, Left Bower, Ace and King of trump—a monster hand.</p>`);
-  if (kind === "mini") return `<div class="lesson-box"><h2>Three-trick challenge</h2><p>Trump is ♥. Win at least two of these choices.</p><div id="mini-game"></div></div>`;
-  return "";
-}
-
-function quiz(question, options, correctIndex, extra) {
-  return `${extra}<section class="question"><h2>${question}</h2><div class="answers">${options.map((o, i) => `<button class="answer" data-answer="${i}">${o}</button>`).join("")}</div><div id="feedback"></div></section>`;
-}
-
-function bindLesson(kind) {
-  if (kind === "mini") { startMiniMission(); return; }
-  app.querySelectorAll("[data-answer]").forEach(btn => btn.onclick = () => answerQuiz(Number(btn.dataset.answer), lessonCorrectIndex(kind)));
-}
-
-function lessonCorrectIndex(kind) {
-  return { pack:1, trump:1, right:1, left:1, benny:1, follow:0, winner:1, tactics:1, call:0 }[kind];
-}
-
-function answerQuiz(index, correctIndex) {
-  if (lessonState.answered) return;
-  lessonState.attempts += 1;
-  const good = index === correctIndex;
-  if (!good) {
-    progress.streak = 0;
-    const feedback = app.querySelector("#feedback");
-    feedback.innerHTML = `<p class="feedback">Not quite. Try again—there's no penalty.</p>`;
-    showToast("Try another answer");
-    saveProgress();
-    return;
-  }
-  lessonState.answered = true;
-  progress.streak += 1;
-  progress.bestStreak = Math.max(progress.bestStreak, progress.streak);
-  if (progress.streak >= 3) unlockAchievement("streak");
-  app.querySelectorAll("[data-answer]").forEach((b, i) => { b.disabled = true; if (i === correctIndex) b.classList.add("correct"); });
-  app.querySelector("#feedback").innerHTML = `<p class="feedback">Correct! Nice work.</p><div class="actions"><button data-complete>Mission complete</button></div>`;
-  app.querySelector("[data-complete]").onclick = completeCurrentLevel;
-  saveProgress();
-}
-
-function completeCurrentLevel(starsOverride) {
-  const level = LEVELS[currentLevel - 1];
-  if (!progress.completed.includes(level.id)) {
-    progress.completed.push(level.id);
-    progress.xp += level.xp;
-  }
-  const stars = starsOverride || (lessonState.attempts <= 1 ? 3 : lessonState.attempts <= 2 ? 2 : 1);
-  progress.stars[level.id] = Math.max(progress.stars[level.id] || 0, stars);
-  if (level.id === 1) unlockAchievement("first");
-  if (progress.completed.includes(3) && progress.completed.includes(4)) unlockAchievement("bower");
-  if (level.kind === "mini") unlockAchievement("mini");
-  saveProgress();
-  showToast(`Mission complete · +${level.xp} XP`);
-  screen = "home";
-  render();
-}
-
-function unlockAchievement(id) {
-  if (progress.achievements.includes(id)) return;
-  progress.achievements.push(id);
-  saveProgress();
-  const achievement = ACHIEVEMENTS.find(a => a.id === id);
-  if (achievement) showToast(`Achievement: ${achievement.title}`);
-}
-
-function renderAchievements() {
-  app.innerHTML = `<p class="eyebrow">Trophy cabinet</p><h1>Achievements</h1>${hud()}<section class="achievement-grid">${ACHIEVEMENTS.map(a => `<article class="achievement ${progress.achievements.includes(a.id) ? "unlocked" : "locked"}"><div class="icon">${a.icon}</div><h3>${a.title}</h3><p>${a.text}</p><span class="badge">${progress.achievements.includes(a.id) ? "Unlocked" : "Locked"}</span></article>`).join("")}</section><div class="actions"><button data-home>Back</button></div>`;
-  app.querySelector("[data-home]").onclick = () => { screen = "home"; render(); };
-}
-
-function startMiniMission() {
-  const rounds = [
-    { lead: {rank:"A",suit:"♣"}, hand:[{rank:"9",suit:"♣"},{rank:"J",suit:"♥"}], correct:0, text:"Partner is winning with A♣." },
-    { lead: {rank:"K",suit:"♠"}, hand:[{rank:"9",suit:"♥"},{rank:"A",suit:"♦"}], correct:0, text:"You cannot follow Spades." },
-    { lead: {rank:"A",suit:"♦"}, hand:[{rank:"J",suit:"♦"},{rank:"Q",suit:"♣"}], correct:1, text:"Hearts are trump, so J♦ is the Left Bower and counts as Hearts—you cannot follow Diamonds with it." }
-  ];
-  lessonState.mini = { index:0, wins:0, rounds };
-  renderMiniRound();
-}
-
-function renderMiniRound() {
-  const box = app.querySelector("#mini-game");
-  const s = lessonState.mini;
-  if (s.index >= s.rounds.length) {
-    box.innerHTML = `<h2>${s.wins >= 2 ? "Challenge passed!" : "Almost there!"}</h2><p>You won ${s.wins}/3 decisions.</p><div class="actions"><button data-mini-end>${s.wins >= 2 ? "Complete mission" : "Try again"}</button></div>`;
-    box.querySelector("[data-mini-end]").onclick = () => s.wins >= 2 ? completeCurrentLevel(s.wins === 3 ? 3 : 2) : startMiniMission();
-    return;
-  }
-  const r = s.rounds[s.index];
-  box.innerHTML = `<p><strong>Decision ${s.index + 1}/3.</strong> ${r.text}</p><p>Led card:</p><div class="card-row">${cardHtml(r.lead)}</div><p>Your choices:</p><div class="hand">${r.hand.map((c,i)=>`<button class="playing-card-wrap" data-mini="${i}" style="background:none;border:0;padding:0;min-height:0">${cardHtml(c)}</button>`).join("")}</div>`;
-  box.querySelectorAll("[data-mini]").forEach(btn => btn.onclick = () => {
-    if (Number(btn.dataset.mini) === r.correct) { s.wins += 1; progress.streak += 1; } else { progress.streak = 0; }
-    s.index += 1; saveProgress(); renderMiniRound();
-  });
-}
-
-function cardHtml(card, trump = null) {
-  const isRed = RED.has(card.suit);
-  const face = ["J","Q","K"].includes(card.rank);
-  const joker = card.joker || card.rank === "B";
-  let portrait = "";
-  if (face) {
-    const suitIndex = SUITS.indexOf(card.suit);
-    const id = FACE_PORTRAITS[card.rank][Math.max(0, suitIndex)];
-    const ch = window.ROUNDHOUSE_CHARACTERS.find(c => c.id === id);
-    if (ch) portrait = `<img src="../poison/${ch.image}" alt="${ch.name}">`;
-  }
-  return `<div class="playing-card ${isRed ? "red" : ""} ${face ? "face" : ""} ${joker ? "joker" : ""}"><span class="corner">${joker ? "B" : card.rank}${joker ? "" : card.suit}</span>${portrait}<span class="suit">${joker ? "★" : card.suit}</span></div>`;
-}
-
-function createDeck() {
-  const deck = [];
-  SUITS.forEach(suit => RANKS.forEach(rank => deck.push({ rank, suit, id: `${rank}${suit}` })));
-  deck.push({ rank:"B", suit:"★", joker:true, id:"B" });
-  return shuffle(deck);
-}
-
-function shuffle(items) {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [copy[i], copy[j]] = [copy[j], copy[i]]; }
-  return copy;
-}
-
-function sameColourSuit(suit) {
-  return suit === "♥" ? "♦" : suit === "♦" ? "♥" : suit === "♠" ? "♣" : "♠";
-}
-function effectiveSuit(card, trump) {
-  if (card.joker) return trump;
-  if (card.rank === "J" && card.suit === sameColourSuit(trump)) return trump;
-  return card.suit;
-}
-function cardPower(card, trump, ledSuit) {
-  if (card.joker) return 100;
-  if (card.rank === "J" && card.suit === trump) return 99;
-  if (card.rank === "J" && card.suit === sameColourSuit(trump)) return 98;
-  const rankPower = {"9":1,"10":2,"J":3,"Q":4,"K":5,"A":6}[card.rank];
-  const suit = effectiveSuit(card, trump);
-  if (suit === trump) return 80 + rankPower;
-  if (suit === ledSuit) return 40 + rankPower;
-  return rankPower;
-}
-function legalCards(hand, trump, ledSuit) {
-  if (!ledSuit) return hand;
-  const followers = hand.filter(c => effectiveSuit(c, trump) === ledSuit);
-  return followers.length ? followers : hand;
-}
-function trickWinner(plays, trump) {
-  const ledSuit = effectiveSuit(plays[0].card, trump);
-  return plays.reduce((best, play) => cardPower(play.card, trump, ledSuit) > cardPower(best.card, trump, ledSuit) ? play : best);
-}
-
-function startFullHand() {
-  currentLevel = 11;
-  const deck = createDeck();
-  const players = window.ROUNDHOUSE_CHARACTERS.slice(0,4).map((c,i)=>({ id:i, name:i===0?"You":c.name, character:c, hand:[], tricks:0 }));
-  for (let r=0;r<5;r++) for (let p=0;p<4;p++) players[p].hand.push(deck.pop());
-  const suggested = chooseTrump(players[0].hand);
-  handState = { players, dealer:3, leader:0, trump:suggested, trick:[], trickNo:1, message:`Trump is ${suggested}. Win as many tricks as you can.`, finished:false, yourTurn:true };
-  screen = "hand";
-  render();
-}
-
-function chooseTrump(hand) {
-  return SUITS.map(suit => ({ suit, score: hand.reduce((sum,c)=>sum+Math.max(0,cardPower(c,suit,suit)-70),0) })).sort((a,b)=>b.score-a.score)[0].suit;
-}
-
-function renderHand() {
-  const s = handState;
-  const you = s.players[0];
-  const legal = s.trick.length ? legalCards(you.hand, s.trump, effectiveSuit(s.trick[0].card, s.trump)) : you.hand;
-  app.innerHTML = `<p class="eyebrow">Mission 11 · Full hand</p><h1>The Roundhouse Table</h1><div class="score-banner">Trump: <strong>${s.trump}</strong> · Trick ${Math.min(5,s.trickNo)}/5 · Your tricks: ${you.tricks}</div><p class="lede">${s.message}</p><section class="table"><div class="trick-grid">${s.players.map(p=>seatHtml(p,s.trick.find(x=>x.player===p.id))).join("")}</div></section>${s.finished ? endHandHtml() : `<h2>Your hand</h2><div class="hand">${you.hand.map(c=>`<button class="playing-card-wrap" data-card="${c.id}" ${legal.includes(c)&&s.yourTurn?"":"disabled"} style="background:none;border:0;padding:0;min-height:0">${cardHtml(c,s.trump)}</button>`).join("")}</div><p class="tip">${s.yourTurn ? "Choose a legal card. If you can follow suit, you must." : "The other players are thinking…"}</p>`}<div class="actions"><button class="ghost" data-home>Back to academy</button></div>`;
-  app.querySelector("[data-home]").onclick = () => { screen="home"; render(); };
-  app.querySelectorAll("[data-card]").forEach(btn => btn.onclick = () => playHuman(btn.dataset.card));
-  const done = app.querySelector("[data-finish-hand]"); if (done) done.onclick = () => { unlockAchievement("table"); completeCurrentLevel(you.tricks >= 3 ? 3 : you.tricks >= 2 ? 2 : 1); };
-}
-
-function seatHtml(player, play) {
-  return `<article class="seat ${player.id===0?"you":""}"><img src="../poison/${player.character.image}" alt="${player.character.name}"><strong>${player.name}</strong><div>${play ? cardHtml(play.card,handState.trump) : `<span class="mini-rule">${player.hand.length} cards</span>`}</div><span>Tricks: ${player.tricks}</span></article>`;
-}
-
-function playHuman(id) {
-  const s = handState;
-  const you = s.players[0];
-  const card = you.hand.find(c=>c.id===id);
-  if (!card || !s.yourTurn) return;
-  const led = s.trick.length ? effectiveSuit(s.trick[0].card,s.trump) : null;
-  if (!legalCards(you.hand,s.trump,led).includes(card)) { showToast("You must follow suit if you can."); return; }
-  you.hand = you.hand.filter(c=>c!==card);
-  s.trick.push({player:0,card});
-  s.yourTurn=false;
-  playAIs();
-}
-
-function playAIs() {
-  const s = handState;
-  [1,2,3].forEach(id => {
-    const p=s.players[id];
-    const led=s.trick.length?effectiveSuit(s.trick[0].card,s.trump):null;
-    const legal=legalCards(p.hand,s.trump,led);
-    const partnerWinning = s.trick.length >= 2 && trickWinner(s.trick,s.trump).player === ((id+2)%4);
-    const choice = chooseAiCard(legal,s.trump,led,partnerWinning);
-    p.hand=p.hand.filter(c=>c!==choice);
-    s.trick.push({player:id,card:choice});
-  });
-  const winner=trickWinner(s.trick,s.trump);
-  s.players[winner.player].tricks += 1;
-  s.message = `${s.players[winner.player].name} wins the trick.`;
-  render();
-  window.setTimeout(()=>{
-    if (s.trickNo >= 5) { s.finished=true; s.message = s.players[0].tricks >= 3 ? "You won the hand!" : "Hand complete. Every trick teaches you something."; render(); return; }
-    s.trickNo += 1; s.trick=[]; s.leader=winner.player;
-    // Tutorial hand keeps the human leading each new trick so interaction stays simple.
-    s.yourTurn=true; s.message=`Trick ${s.trickNo}: choose your lead.`; render();
-  },700);
-}
-
-function chooseAiCard(legal,trump,led,partnerWinning) {
-  const sorted=[...legal].sort((a,b)=>cardPower(a,trump,led)-cardPower(b,trump,led));
-  if (partnerWinning) return sorted[0];
-  return sorted[sorted.length-1];
-}
-
-function endHandHtml() {
-  const tricks=handState.players[0].tricks;
-  return `<section class="lesson-box"><h2>${tricks>=3?"Hand won!":"Hand complete"}</h2><p>You took <strong>${tricks}</strong> of 5 tricks.</p><p>${tricks>=3?"Excellent—you are ready for a real table.":"You finished a whole Euchre hand. Replay it and try to spot when to save trump."}</p><div class="actions"><button data-finish-hand>Claim rewards</button></div></section>`;
-}
-
+function choiceQuiz(q,o,c,t){return `<section class="question"><h2>${q}</h2><div class="answers">${o.map((x,i)=>`<button class="answer" data-answer="${i}">${x}</button>`).join("")}</div><p class="tip">${t}</p><div id="feedback"></div></section>`;}
+function cardQuiz(q,groups,c,t){return `<section class="question"><h2>${q}</h2><div class="card-answers">${groups.map((g,i)=>`<button class="card-answer" data-answer="${i}">${g.map(cardHtml).join("")}</button>`).join("")}</div><p class="tip">${t}</p><div id="feedback"></div></section>`;}
+function bindLesson(k){if(k==="mini"){startMiniMission();return;}app.querySelectorAll("[data-answer]").forEach(b=>b.onclick=()=>answerQuiz(+b.dataset.answer,({pack:1,trump:1,right:1,left:0,benny:1,follow:0,winner:1,tactics:1,orderup:0,dealerpick:1,roundtwo:0,alone:0,scoring:0,partner:1,partnerlead:0})[k]));}
+function answerQuiz(i,c){if(lessonState.answered)return;lessonState.attempts++;if(i!==c){progress.streak=0;app.querySelector("#feedback").innerHTML=`<p class="feedback">Not quite. Try again—there's no penalty.</p>`;showToast("Try another answer");saveProgress();return;}lessonState.answered=true;progress.streak++;progress.bestStreak=Math.max(progress.bestStreak,progress.streak);if(progress.streak>=3)unlockAchievement("streak");app.querySelectorAll("[data-answer]").forEach((b,n)=>{b.disabled=true;if(n===c)b.classList.add("correct");});app.querySelector("#feedback").innerHTML=`<p class="feedback">Correct! Nice work.</p><div class="actions"><button data-complete>Mission complete</button></div>`;app.querySelector("[data-complete]").onclick=completeCurrentLevel;saveProgress();}
+function completeCurrentLevel(starsOverride){const l=LEVELS[currentLevel-1];if(!progress.completed.includes(l.id)){progress.completed.push(l.id);progress.xp+=l.xp;}progress.stars[l.id]=Math.max(progress.stars[l.id]||0,starsOverride||(lessonState.attempts<=1?3:lessonState.attempts<=2?2:1));if(l.id===1)unlockAchievement("first");if(progress.completed.includes(3)&&progress.completed.includes(4))unlockAchievement("bower");if(progress.completed.includes(9)&&progress.completed.includes(11))unlockAchievement("bidder");if(progress.completed.includes(14)&&progress.completed.includes(15))unlockAchievement("team");if(l.kind==="mini")unlockAchievement("mini");saveProgress();showToast(`Mission complete · +${l.xp} XP`);screen="home";render();}
+function unlockAchievement(id){if(progress.achievements.includes(id))return;progress.achievements.push(id);saveProgress();const a=ACHIEVEMENTS.find(x=>x.id===id);if(a)showToast(`Achievement: ${a.title}`);}
+function renderAchievements(){app.innerHTML=`<p class="eyebrow">Trophy cabinet</p><h1>Achievements</h1>${hud()}<section class="achievement-grid">${ACHIEVEMENTS.map(a=>`<article class="achievement ${progress.achievements.includes(a.id)?"unlocked":"locked"}"><div class="icon">${a.icon}</div><h3>${a.title}</h3><p>${a.text}</p><span class="badge">${progress.achievements.includes(a.id)?"Unlocked":"Locked"}</span></article>`).join("")}</section><div class="actions"><button data-home>Back</button></div>`;app.querySelector("[data-home]").onclick=()=>{screen="home";render();};}
+function startMiniMission(){const rounds=[{text:"Partner is winning A♣. Save trump.",hand:[C("9","♣"),C("J","♥")],correct:0},{text:"Partner called Hearts. Lead a small trump.",hand:[C("9","♥"),C("A","♣")],correct:0},{text:"Partner is winning K♠. Don't overtake.",hand:[C("A","♠"),C("9","♠")],correct:1}];lessonState.miniIndex=0;lessonState.correct=0;renderMiniRound(rounds);}
+function renderMiniRound(rounds){const box=app.querySelector("#mini-game");if(lessonState.miniIndex>=rounds.length){box.innerHTML=`<p class="feedback">You made ${lessonState.correct}/3 good team plays.</p><div class="actions"><button data-finish>Finish mission</button></div>`;box.querySelector("[data-finish]").onclick=()=>completeCurrentLevel(lessonState.correct===3?3:2);return;}const r=rounds[lessonState.miniIndex];box.innerHTML=`<p>${r.text}</p><div class="card-answers">${r.hand.map((c,i)=>`<button class="card-answer" data-mini="${i}">${cardHtml(c)}</button>`).join("")}</div>`;box.querySelectorAll("[data-mini]").forEach(b=>b.onclick=()=>{if(+b.dataset.mini===r.correct){lessonState.correct++;showToast("Good team play!");}else showToast("Think about helping your partner.");lessonState.miniIndex++;renderMiniRound(rounds);});}
+function makeDeck(){const d=[];SUITS.forEach(s=>RANKS.forEach(r=>d.push(C(r,s))));d.push(C("B","★",true));return d;}
+function sameColourSuit(s){return s==="♥"?"♦":s==="♦"?"♥":s==="♣"?"♠":"♣";}
+function effectiveSuit(c,t){if(c.joker)return t;if(c.rank==="J"&&(c.suit===t||c.suit===sameColourSuit(t)))return t;return c.suit;}
+function cardPower(c,t,l){if(c.joker)return 100;if(c.rank==="J"&&c.suit===t)return 99;if(c.rank==="J"&&c.suit===sameColourSuit(t))return 98;const o={9:1,10:2,J:3,Q:4,K:5,A:6},s=effectiveSuit(c,t);if(s===t)return 80+o[c.rank];if(s===l)return 40+o[c.rank];return o[c.rank];}
+function legalCards(h,t,l){if(!l)return h;const m=h.filter(c=>effectiveSuit(c,t)===l);return m.length?m:h;}
+function trickWinner(trick,t){const l=effectiveSuit(trick[0].card,t);return trick.reduce((b,p)=>cardPower(p.card,t,l)>cardPower(b.card,t,l)?p:b,trick[0]);}
+function startFullHand(){const deck=shuffle(makeDeck()),trump=SUITS[Math.floor(Math.random()*4)],hands=[[],[],[],[]];for(let r=0;r<5;r++)for(let p=0;p<4;p++)hands[p].push(deck.pop());handState={trump,hands,trick:[],leader:0,currentPlayer:0,trickNumber:1,teamTricks:0,opponentTricks:0,message:"You lead the first trick.",finished:false};screen="hand";render();}
+function renderHand(){const h=handState;if(h.finished){renderHandResult();return;}const chars=window.ROUNDHOUSE_CHARACTERS.slice(4,8);app.innerHTML=`<p class="eyebrow">Final Mission</p><h1>The Roundhouse Table</h1><div class="score-banner">Trump: <strong>${h.trump}</strong> · Trick ${h.trickNumber}/5 · You & Partner ${h.teamTricks} — ${h.opponentTricks} Opponents</div><div class="table"><div class="trick-grid">${[0,1,2,3].map(i=>`<div class="seat ${i===0?"you":""}">${i===0?"<strong>You</strong>":`<img src="../poison/${chars[i-1].image}" alt="${chars[i-1].name}"><strong>${chars[i-1].name}</strong>`}<div>${h.trick.find(t=>t.player===i)?cardHtml(h.trick.find(t=>t.player===i).card):""}</div></div>`).join("")}</div></div><p class="feedback">${h.message}</p><h2>Your hand</h2><div class="hand">${h.hands[0].map((c,i)=>playableCardHtml(c,i)).join("")}</div><p class="mini-rule">Your partner is opposite you (seat 2). Follow suit whenever you can.</p>`;app.querySelectorAll("[data-play]").forEach(b=>b.onclick=()=>playHumanCard(+b.dataset.play));}
+function playableCardHtml(c,i){const h=handState,l=h.trick.length?effectiveSuit(h.trick[0].card,h.trump):null,a=legalCards(h.hands[0],h.trump,l).includes(c);return `<button class="card-button" data-play="${i}" ${a?"":"disabled"}>${cardHtml(c)}</button>`;}
+function playHumanCard(i){const h=handState;if(h.currentPlayer!==0)return;const c=h.hands[0][i],l=h.trick.length?effectiveSuit(h.trick[0].card,h.trump):null;if(!legalCards(h.hands[0],h.trump,l).includes(c)){showToast("You must follow suit.");return;}h.hands[0].splice(i,1);h.trick.push({player:0,card:c});advanceTurn();}
+function advanceTurn(){const h=handState;if(h.trick.length===4){const w=trickWinner(h.trick,h.trump);if(w.player%2===0)h.teamTricks++;else h.opponentTricks++;h.message=`${w.player===0?"You":w.player===2?"Your partner":"An opponent"} won the trick.`;h.currentPlayer=w.player;h.trickNumber++;if(h.trickNumber>5){h.finished=true;render();return;}h.trick=[];setTimeout(runAITurns,350);render();return;}h.currentPlayer=(h.currentPlayer+1)%4;setTimeout(runAITurns,250);render();}
+function runAITurns(){const h=handState;if(h.finished||h.currentPlayer===0)return;const p=h.currentPlayer,hand=h.hands[p],l=h.trick.length?effectiveSuit(h.trick[0].card,h.trump):null,legal=legalCards(hand,h.trump,l),c=[...legal].sort((a,b)=>cardPower(a,h.trump,l)-cardPower(b,h.trump,l))[0];hand.splice(hand.indexOf(c),1);h.trick.push({player:p,card:c});advanceTurn();}
+function renderHandResult(){const won=handState.teamTricks>=3;if(won)unlockAchievement("table");app.innerHTML=`<p class="eyebrow">Hand complete</p><h1>${won?"Well played!":"Good practice!"}</h1><p class="lede">Your team took ${handState.teamTricks} of 5 tricks.</p><div class="actions"><button data-again>Play another hand</button><button class="secondary" data-home>Academy</button></div>`;app.querySelector("[data-again]").onclick=startFullHand;app.querySelector("[data-home]").onclick=()=>{screen="home";render();};}
+function cardHtml(c){const red=RED.has(c.suit)?" red":"";if(c.joker)return `<div class="playing-card joker face"><span class="corner">JOKER</span><img src="${BENNY_PORTRAIT}" alt="Roundhouse Joker portrait"><span class="joker-banner">BENNY</span><span class="suit">★</span></div>`;const face=["J","Q","K"].includes(c.rank);let image="";if(face){const id=FACE_PORTRAITS[c.rank][SUITS.indexOf(c.suit)];image=`<img src="../poison/assets/portraits/${id}.png" alt="Roundhouse portrait">`;}return `<div class="playing-card${red}${face?" face":""}"><span class="corner">${c.rank}${c.suit}</span>${image}<span class="suit">${c.suit}</span></div>`;}
+function shuffle(items){const c=[...items];for(let i=c.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[c[i],c[j]]=[c[j],c[i]];}return c;}
 render();
